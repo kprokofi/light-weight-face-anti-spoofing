@@ -20,10 +20,10 @@ from tqdm import tqdm
 
 # parse arguments
 parser = argparse.ArgumentParser(description='antispoofing training')
-parser.add_argument('-b', '--batch-size', default=128, type=int, help='mini-batch size (default: 128)')
+parser.add_argument('-b', '--batch-size', default=100, type=int, help='mini-batch size (default: 128)')
 parser.add_argument('--epochs', default=200, type=int, help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int, help='manual epoch number (useful on restarts)')
-parser.add_argument('--wd', '--weight-decay', default=1e-4, type=float, help='weight decay (default: 1e-4)')
+parser.add_argument('--wd', '--weight-decay', default=5e-4, type=float, help='weight decay (default: 1e-4)')
 parser.add_argument('-j', '--workers', default=4, type=int, help='number of data loading workers (default: 4)')
 parser.add_argument('--cuda', type=bool, default=True, help='use cpu')
 parser.add_argument('--GPU', type=int, default=0, help='specify which gpu to use')
@@ -37,8 +37,8 @@ parser.add_argument('--loss', default='cross_entropy', type=str, help='which los
 parser.add_argument('--classes', default=2, type=int, help='number of classes')
 
 #global variables
-WRITER = SummaryWriter(f'/home/prokofiev/pytorch/antispoofing/log_tensorboard/MobileNet_LCFAD_1')
-STEP = 0
+WRITER = SummaryWriter(f'/home/prokofiev/pytorch/antispoofing/log_tensorboard/MobileNet_LCFAD_1.5')
+STEP, VAL_STEP = 0, 0
 BEST_ACCURACY = 0
 
 def main():
@@ -100,11 +100,13 @@ def main():
         accuracy = validate(val_loader, model, criterion)
 
         # remember best accuracy and save checkpoint
+        if accuracy > BEST_ACCURACY and args.save_checkpoint:
+            checkpoint = {'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict()}
+            save_checkpoint(checkpoint, 'my_best_modelMobileNet2_1.5.pth.tar')
+
         BEST_ACCURACY = max(accuracy, BEST_ACCURACY)
         print(f'best accuracy:  {BEST_ACCURACY}')
-        if accuracy == BEST_ACCURACY and args.save_checkpoint:
-            checkpoint = {'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict()}
-            save_checkpoint(checkpoint, 'my_best_modelMobileNet2.pth.tar')
+        
 
 def train(train_loader, model, criterion, optimizer, epoch):
     global STEP, args
@@ -120,7 +122,7 @@ def train(train_loader, model, criterion, optimizer, epoch):
 
     # switch to train mode and train one epoch
     model.train()
-    loop = tqdm(enumerate(train_loader), total=len(train_loader))
+    loop = tqdm(enumerate(train_loader), total=len(train_loader), leave=False)
     for i, (input, target) in loop:
         if args.cuda:
             input = input.cuda(device=args.GPU)
@@ -128,7 +130,6 @@ def train(train_loader, model, criterion, optimizer, epoch):
 
         # compute output and loss
         output = model(input)
-        print(output.shape, target.shape)
         loss = criterion(output, target)
 
         # compute gradient and do SGD step
@@ -142,8 +143,8 @@ def train(train_loader, model, criterion, optimizer, epoch):
         accuracy.update(acc, input.size(0))
 
         # write to writer for tensorboard
-        WRITER.add_scalar('Train/loss', loss, global_step=STEP)
-        WRITER.add_scalar('Train/accuracy',  acc, global_step=STEP)
+        WRITER.add_scalar('Train/loss', losses.avg, global_step=STEP)
+        WRITER.add_scalar('Train/accuracy',  accuracy.avg, global_step=STEP)
         STEP += 1
 
         # update progress bar
@@ -152,13 +153,14 @@ def train(train_loader, model, criterion, optimizer, epoch):
             loop.set_postfix(loss=loss.item(), avr_loss = losses.avg, acc=acc, avr_acc=accuracy.avg)
 
 def validate(val_loader, model, criterion):
+    global args, VAL_STEP
     # meters
     batch_time = AverageMeter()
     losses = AverageMeter()
     accuracy = AverageMeter()
 
     # switch to evaluation mode and inference the model
-    loop = tqdm(enumerate(val_loader), total=len(val_loader))
+    loop = tqdm(enumerate(val_loader), total=len(val_loader), leave=False)
     for i, (input, target) in loop:
         if args.cuda:
             input = input.cuda(device=args.GPU)
@@ -174,11 +176,16 @@ def validate(val_loader, model, criterion):
         losses.update(loss.item(), input.size(0))
         accuracy.update(acc, input.size(0))
 
+        # write val in writer
+        WRITER.add_scalar('Val/loss', losses.avg, global_step=VAL_STEP)
+        WRITER.add_scalar('Val/accuracy',  accuracy.avg, global_step=VAL_STEP)
+        VAL_STEP += 1
+
         # update progress bar
         if i % args.print_freq == 0:
             loop.set_postfix(loss=loss.item(), avr_loss = losses.avg, acc=acc, avr_acc=accuracy.avg)
 
-    print(f'val accuracy on epoch: {round(accuracy.avg,3)}')
+    print(f'val accuracy on epoch: {round(accuracy.avg, 3)}')
 
     return accuracy.avg
 
