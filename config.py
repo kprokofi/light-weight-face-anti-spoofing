@@ -1,8 +1,8 @@
 
 img_norm_cfg = dict(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
-optimizer = dict(lr=0.05, momentum=0.9, weight_decay=5e-4)
-schedular = dict(milestones=[100,150], gamma=0.1)
+optimizer = dict(lr=0.1, momentum=0.9, weight_decay=5e-4)
+schedular = dict(milestones=[60,150], gamma=0.1)
 data = {
   "cuda": True,
   "batch_size": 100,

@@ -140,7 +140,7 @@ def train(train_loader, model, criterion, optimizer, epoch):
     model.train()
     loop = tqdm(enumerate(train_loader), total=len(train_loader), leave=False)
     for i, (input, target) in loop:
-        if args.cuda:
+        if config['data']['cuda']:
             input = input.cuda(device=args.GPU)
             target = target.cuda(device=args.GPU)
 
@@ -234,7 +234,7 @@ def test_on_val(val_loader, model):
         target = target.cpu().numpy()
         target_accum = np.concatenate((target_accum, target))
 
-    fpr, tpr, threshold = roc_curve(target_accum, proba_accum, pos_label=1)
+    fpr, tpr, _ = roc_curve(target_accum, proba_accum, pos_label=1)
     fnr = 1 - tpr
     EER = fpr[np.nanargmin(np.absolute((fnr - fpr)))]
     AUC = auc(fpr, tpr)
