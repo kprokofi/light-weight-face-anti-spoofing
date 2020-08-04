@@ -45,7 +45,7 @@ experiment_snapshot = config['checkpoint']['snapshot_name']
 experiment_path = config['checkpoint']['experiment_path']
 WRITER = SummaryWriter(experiment_path)
 STEP, VAL_STEP = 0, 0
-BEST_ACCURACY, BEST_AUC, BEST_EER = 0, 0, 0
+BEST_ACCURACY, BEST_AUC, BEST_EER = 0, 0, 1000
 
 def main():
     global args, BEST_ACCURACY, BEST_EER, BEST_AUC, config
@@ -106,7 +106,7 @@ def main():
         # remember best accuracy, AUC and EER and save checkpoint
         if accuracy > BEST_ACCURACY and args.save_checkpoint:
             AUC, EER = test_on_val(val_loader, model)
-            if EER > BEST_EER or AUC > BEST_AUC:
+            if EER < BEST_EER or AUC > BEST_AUC:
                 checkpoint = {'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict()}
                 save_checkpoint(checkpoint, f'{experiment_path}/{experiment_snapshot}')
             BEST_EER = max(EER, BEST_EER)
@@ -116,11 +116,12 @@ def main():
         if (epoch%30 == 0 or epoch == config['epochs']['max_epoch']) and args.save_checkpoint:
             AUC, EER = test_on_val(val_loader, model)
             print(f'epoch: {epoch}   AUC: {AUC}   EER: {EER}')
-            if EER > BEST_EER or AUC > BEST_AUC:
+            if EER < BEST_EER or AUC > BEST_AUC:
                 checkpoint = {'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict()}
                 save_checkpoint(checkpoint, f'{experiment_path}/{experiment_snapshot}')
             BEST_EER = max(EER, BEST_EER)
             BEST_AUC = max(AUC, BEST_AUC)
+            
         BEST_ACCURACY = max(accuracy, BEST_ACCURACY)
         print(f'best val accuracy:  {BEST_ACCURACY}  best AUC: {BEST_AUC}  best EER: {BEST_EER}')
         
