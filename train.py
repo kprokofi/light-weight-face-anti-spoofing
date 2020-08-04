@@ -31,18 +31,13 @@ parser.add_argument('--epochs', default=200, type=int, help='number of total epo
 parser.add_argument('--start-epoch', default=0, type=int, help='manual epoch number (useful on restarts)')
 parser.add_argument('--wd', '--weight-decay', default=5e-4, type=float, help='weight decay (default: 1e-4)')
 parser.add_argument('-j', '--workers', default=1, type=int, help='number of data loading workers (default: 0)')
-parser.add_argument('--cuda', type=bool, default=True, help='use cpu')
 parser.add_argument('--GPU', type=int, default=1, help='specify which gpu to use')
 parser.add_argument('--print-freq', '-p', default=20, type=int, help='print frequency (default: 20)')
-parser.add_argument('--lr', '--learning-rate', default=0.05, type=float, help='initial learning rate')
-parser.add_argument('--adjust_lr', type=list, default=[100, 150], help='spicify range of dropping lr')
-parser.add_argument('--momentum', default=0.9, type=float, help='momentum')
-parser.add_argument('--gamma', default=0.1, type=float, help='specify koefficient of lr dropping')
 parser.add_argument('--save_checkpoint', type=bool, default=True, help='whether or not to save your model')
 parser.add_argument('--loss', default='cross_entropy', type=str, help='which loss to use')
-parser.add_argument('--classes', default=2, type=int, help='number of classes')
 parser.add_argument('--config', type=str, default=os.path.join(current_dir, 'config.py'), required=False,
                         help='Configuration file')
+
 #global variables and argument parsing
 args = parser.parse_args()
 config = read_py_config(args.config)
@@ -70,10 +65,15 @@ def main():
                 normalize,
                 ])     
 
-    train_dataset = LCFAD(root_dir='/home/prokofiev/pytorch/LCC_FASD', train=True, transform=train_transform)
-    val_dataset = LCFAD(root_dir='/home/prokofiev/pytorch/LCC_FASD', train=False, transform=val_transform)
-    train_loader = DataLoader(dataset=train_dataset, batch_size=config['data']['batch_size'], shuffle=True, pin_memory=config['data']['pin_memory'])
-    val_loader = DataLoader(dataset=val_dataset, batch_size=config['data']['batch_size'], shuffle=True, pin_memory=config['data']['pin_memory'])
+    train_dataset = LCFAD(root_dir=config['data']['data_root'], train=True, transform=train_transform)
+    val_dataset = LCFAD(root_dir=config['data']['data_root'], train=False, transform=val_transform)
+    train_loader = DataLoader(dataset=train_dataset, batch_size=config['data']['batch_size'], 
+                                                    shuffle=True, pin_memory=config['data']['pin_memory'], 
+                                                    num_workers=config['data']['data_loader_workers'])
+
+    val_loader = DataLoader(dataset=val_dataset, batch_size=config['data']['batch_size'], 
+                                                shuffle=True, pin_memory=config['data']['pin_memory'], 
+                                                num_workers=config['data']['data_loader_workers'])
 
     # model
     if args.loss == 'amsoftmax':
@@ -106,14 +106,14 @@ def main():
         # remember best accuracy, AUC and EER and save checkpoint
         if accuracy > BEST_ACCURACY and args.save_checkpoint:
             AUC, EER = test_on_val(val_loader, model)
-            BEST_EER = max(EER, BEST_EER)
-            BEST_AUC = max(AUC, BEST_AUC)
             if EER > BEST_EER or AUC > BEST_AUC:
                 checkpoint = {'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict()}
                 save_checkpoint(checkpoint, f'{experiment_path}/{experiment_snapshot}')
+            BEST_EER = max(EER, BEST_EER)
+            BEST_AUC = max(AUC, BEST_AUC)
 
         # evaluate on val every 30 epoch and save snapshot if better results achieved
-        if (epoch%30 == 0 or epoch == args.epochs) and args.save_checkpoint:
+        if (epoch%30 == 0 or epoch == config['epochs']['max_epoch']) and args.save_checkpoint:
             AUC, EER = test_on_val(val_loader, model)
             print(f'epoch: {epoch}   AUC: {AUC}   EER: {EER}')
             if EER > BEST_EER or AUC > BEST_AUC:
@@ -171,7 +171,7 @@ def train(train_loader, model, criterion, optimizer, epoch):
         # update progress bar
         loop.set_description(f'Epoch [{epoch}/{200}]')
         if i % args.print_freq == 0:
-            loop.set_postfix(loss=loss.item(), avr_loss = losses.avg, acc=acc, avr_acc=accuracy.avg)
+            loop.set_postfix(loss=loss.item(), avr_loss = losses.avg, acc=acc, avr_acc=accuracy.avg, lr=optimizer.param_groups[0]['lr'])
     return losses.avg, accuracy.avg
 
 def validate(val_loader, model, criterion):
