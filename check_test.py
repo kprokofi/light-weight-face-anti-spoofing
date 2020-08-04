@@ -12,55 +12,44 @@ import matplotlib.pyplot as plt
 from scipy.optimize import brentq
 from scipy.interpolate import interp1d
 import matplotlib
-
-model = MobilNet2.MobileNetV2(use_amsoftmax=False)
-parser = argparse.ArgumentParser(description='antispoofing training')
-parser.add_argument('--model_name', default='/home/prokofiev/pytorch/antispoofing/log_tensorboard/MobileNet_LCFAD_1.5/my_best_modelMobileNet2_1.5.pth.tar', type=str)
+from mobilenetv3 import mobilenetv3_large
+from amsoftmax import AngleSimpleLinear
 
 def load_checkpoint(checkpoint, model):
     print("==> Loading checkpoint")
     model.load_state_dict(checkpoint['state_dict'])
 
-def evaulate(model):
+def evaulate(model, loader, compute_accuracy=True, GPU=2):
     global args
-    args = parser.parse_args()
-    model.cuda(device=2)
-    normalize = A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-    test_transform = A.Compose([
-                A.Resize(224, 224),
-                normalize,
-                ])     
 
-    test_dataset = LCFAD(root_dir='/home/prokofiev/pytorch/LCC_FASD', train=False, transform=test_transform)
-
-    test_loader = DataLoader(dataset=test_dataset, batch_size=100, shuffle=True, num_workers=2)
-
-    load_checkpoint(torch.load(args.model_name, map_location='cuda:2'), model)
-    
     model.eval()
     proba_accum = np.array([])
     target_accum = np.array([])
     accur=[]
-    for input, target in test_loader:
-        input = input.cuda(device=2)
-        target = target.cuda(device=2)
+    for input, target in loader:
+        input = input.cuda(device=GPU)
+        target = target.cuda(device=GPU)
         with torch.no_grad():
             output = model(input)
-            accur.append((output.argmax(dim=1) == target).float().mean().item())
+            if compute_accuracy:
+                accur.append((output.argmax(dim=1) == target).float().mean().item())
             positive_probabilities = F.softmax(output, dim=-1)[:,1].cpu().numpy()
         proba_accum = np.concatenate((proba_accum, positive_probabilities))
         target = target.cpu().numpy()
         target_accum = np.concatenate((target_accum, target))
-    return target_accum, proba_accum, accur
 
-true_target, output_prediction, accur = evaulate(model)
-fpr, tpr, threshold = roc_curve(true_target, output_prediction, pos_label=1)
-fnr = 1 - tpr
-EER = fpr[np.nanargmin(np.absolute((fnr - fpr)))]
-print(f'EER = {EER}')
-print(f'accuracy on test data = {np.mean(accur)}')
-print(f'AUC = {auc(fpr, tpr)}')
-def plot_ROC_curve(fpr, tpr, name_fig='ROC curve 5_5'):
+    fpr, tpr, threshold = roc_curve(target_accum, proba_accum, pos_label=1)
+    fnr = 1 - tpr
+    fpr_EER = fpr[np.nanargmin(np.absolute((fnr - fpr)))]
+    fnr_EER = fnr[np.nanargmin(np.absolute((fnr - fpr)))]
+    if fpr_EER < fnr_EER:
+        EER = fpr_EER
+    else:
+        EER = fnr_EER
+    AUC = auc(fpr, tpr)
+    return AUC, EER, accur, fpr, tpr
+
+def plot_ROC_curve(fpr, tpr, name_fig='ROC curve 8'):
     plt.figure()
     plt.xlim([-0.01, 1.00])
     plt.ylim([-0.01, 1.00])
@@ -73,7 +62,7 @@ def plot_ROC_curve(fpr, tpr, name_fig='ROC curve 5_5'):
     plt.axes().set_aspect('equal')
     plt.savefig(name_fig)
 
-def plot_curve_DET(fpr, fnr, EER, name_fig='DET curve 5_5'):
+def plot_curve_DET(fpr, fnr, EER, name_fig='DET curve 8'):
     plt.figure()
     plt.xlim([0.1, 60])
     plt.ylim([0.1, 60])
@@ -101,14 +90,39 @@ def DETCurve(fps,fns, EER):
     ax.set_xticks(ticks_to_use)
     ax.set_yticks(ticks_to_use)
     plt.axis([0.001,50,0.001,50])
-    fig.savefig('log_DET_5_5.png')
+    fig.savefig('log_DET_8.png')
 
-# plot_ROC_curve(fpr, tpr)
-# plot_curve_DET(fpr, fnr, EER)
-# DETCurve(fpr, fnr, EER)
+if __name__ == "__main__":
 
-eer = brentq(lambda x : 1. - x - interp1d(fpr, tpr)(x), 0., 1.)
-thresh = interp1d(fpr, threshold)(eer)
-print(eer, thresh)
-# true_positives = ((array_saver == 1) == (target_saver == 1)).sum()
-# false_positives = ((array_saver == 1) == (target_saver == 0)).sum()
+    parser = argparse.ArgumentParser(description='antispoofing training')
+    parser.add_argument('--model_name', default='/home/prokofiev/pytorch/antispoofing/log_tensorboard/MobileNet_LCFAD_8/my_best_modelMobileNet_8.pth.tar', type=str)
+    parser.add_argument('--draw_graph', default=False, type=bool, help='whether or not to draw graphics')
+    parser.add_argument('--model', type=str, default='mobilenet2', help='which model to use')
+    args = parser.parse_args()
+    if args.model == 'mobilenet2':
+        model = MobilNet2.MobileNetV2(use_amsoftmax=False) # add variability to the models
+    else:
+        model = mobilenetv3_large()
+        model.classifier[3] = AngleSimpleLinear(1280, 2)
+    model.cuda(device=2)
+    normalize = A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    test_transform = A.Compose([
+                A.Resize(224, 224),
+                normalize,
+                ])     
+
+    test_dataset = LCFAD_test(root_dir='/home/prokofiev/pytorch/LCC_FASD', transform=test_transform)
+
+    test_loader = DataLoader(dataset=test_dataset, batch_size=100, shuffle=True, num_workers=2)
+
+    load_checkpoint(torch.load(args.model_name, map_location='cuda:2'), model)
+    AUC, EER, accur, fpr, tpr = evaulate(model, test_loader)
+    print(f'EER = {EER}')
+    print(f'accuracy on test data = {np.mean(accur)}')
+    print(f'AUC = {AUC}')
+    if args.draw_graph:
+        fnr = 1 - tpr
+        plot_ROC_curve(fpr, tpr)
+        plot_curve_DET(fpr, fnr, EER)
+        DETCurve(fpr, fnr, EER)
+    

@@ -21,20 +21,16 @@ from label_smoothing import LabelSmoothingLoss, CrossEntropyReduction
 import config
 from utils import AverageMeter, read_py_config, save_checkpoint, precision
 import os
-from sklearn.metrics import roc_curve, auc
+from check_test import evaulate
+from mobilenetv3 import mobilenetv3_large, h_swish
 
 parser = argparse.ArgumentParser(description='antispoofing training')
 current_dir = os.path.dirname(os.path.abspath(__file__))
+
 # parse arguments
-parser.add_argument('-b', '--batch-size', default=100, type=int, help='mini-batch size (default: 128)')
-parser.add_argument('--epochs', default=200, type=int, help='number of total epochs to run')
-parser.add_argument('--start-epoch', default=0, type=int, help='manual epoch number (useful on restarts)')
-parser.add_argument('--wd', '--weight-decay', default=5e-4, type=float, help='weight decay (default: 1e-4)')
-parser.add_argument('-j', '--workers', default=1, type=int, help='number of data loading workers (default: 0)')
 parser.add_argument('--GPU', type=int, default=1, help='specify which gpu to use')
 parser.add_argument('--print-freq', '-p', default=20, type=int, help='print frequency (default: 20)')
 parser.add_argument('--save_checkpoint', type=bool, default=True, help='whether or not to save your model')
-parser.add_argument('--loss', default='cross_entropy', type=str, help='which loss to use')
 parser.add_argument('--config', type=str, default=os.path.join(current_dir, 'config.py'), required=False,
                         help='Configuration file')
 
@@ -76,17 +72,23 @@ def main():
                                                 num_workers=config['data']['data_loader_workers'])
 
     # model
-    if args.loss == 'amsoftmax':
-        model = MobilNet2.MobileNetV2(use_amsoftmax=True)
+    if config['model']['model_type'] == 'Mobilenet2':
+        model = MobilNet2.MobileNetV2(use_amsoftmax=config['model']['use_amsoftmax'])
     else:
-        assert args.loss == 'cross_entropy'
-        model = MobilNet2.MobileNetV2()
-    
+        assert config['model']['model_type'] == 'Mobilenet3'
+        model = mobilenetv3_large()
+        if config['model']['pretrained']:
+            model.load_state_dict(torch.load('pretrained/mobilenetv3-large-1cd25616.pth', map_location=f'cuda:{args.GPU}'), strict=False)
+            if config['loss']['loss_type'] == 'amsoftmax':
+                model.classifier[3] = AngleSimpleLinear(1280, 2)
+            else:
+                model.classifier[3] = nn.Linear(1280, 2)
+
     #criterion
-    if args.loss == 'cross_entropy':
-        criterion = nn.CrossEntropyLoss()
+    if config['loss']['loss_type'] == 'amsoftmax':
+        criterion = AMSoftmaxLoss(**config['amsoftmax'])
     else:
-        criterion = AMSoftmaxLoss(m=0.5, margin_type='cos', s=5)
+        criterion = nn.CrossEntropyLoss()
     
     optimizer = torch.optim.SGD(model.parameters(), **config['optimizer'])
     scheduler = optim.lr_scheduler.MultiStepLR(optimizer, **config['schedular'])
@@ -105,24 +107,25 @@ def main():
 
         # remember best accuracy, AUC and EER and save checkpoint
         if accuracy > BEST_ACCURACY and args.save_checkpoint:
-            AUC, EER = test_on_val(val_loader, model)
+            AUC, EER, _, _, _ = evaulate(model, val_loader, compute_accuracy=False, GPU=args.GPU)
             if EER < BEST_EER or AUC > BEST_AUC:
-                checkpoint = {'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict()}
+                checkpoint = {'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch':epoch}
                 save_checkpoint(checkpoint, f'{experiment_path}/{experiment_snapshot}')
-            BEST_EER = max(EER, BEST_EER)
+                BEST_ACCURACY = max(accuracy, BEST_ACCURACY)
+                print(f'epoch: {epoch}   AUC: {AUC}   EER: {EER}')
+            BEST_EER = min(EER, BEST_EER)
             BEST_AUC = max(AUC, BEST_AUC)
 
         # evaluate on val every 30 epoch and save snapshot if better results achieved
         if (epoch%30 == 0 or epoch == config['epochs']['max_epoch']) and args.save_checkpoint:
-            AUC, EER = test_on_val(val_loader, model)
+            AUC, EER, _, _, _ = evaulate(model, val_loader, compute_accuracy=False, GPU=args.GPU)
             print(f'epoch: {epoch}   AUC: {AUC}   EER: {EER}')
             if EER < BEST_EER or AUC > BEST_AUC:
-                checkpoint = {'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict()}
+                checkpoint = {'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch':epoch}
                 save_checkpoint(checkpoint, f'{experiment_path}/{experiment_snapshot}')
-            BEST_EER = max(EER, BEST_EER)
+            BEST_EER = min(EER, BEST_EER)
             BEST_AUC = max(AUC, BEST_AUC)
-            
-        BEST_ACCURACY = max(accuracy, BEST_ACCURACY)
+
         print(f'best val accuracy:  {BEST_ACCURACY}  best AUC: {BEST_AUC}  best EER: {BEST_EER}')
         
 def train(train_loader, model, criterion, optimizer, epoch):
@@ -147,7 +150,7 @@ def train(train_loader, model, criterion, optimizer, epoch):
 
         # compute output and loss
         output = model(input)
-        if args.loss == 'amsoftmax':
+        if config['loss']['loss_type'] == 'amsoftmax':
             new_target = F.one_hot(target, num_classes=2)
             loss = criterion(output, new_target)
         else:
@@ -170,7 +173,8 @@ def train(train_loader, model, criterion, optimizer, epoch):
         STEP += 1
 
         # update progress bar
-        loop.set_description(f'Epoch [{epoch}/{200}]')
+        max_epochs = config['epochs']['max_epoch']
+        loop.set_description(f'Epoch [{epoch}/{max_epochs}]')
         if i % args.print_freq == 0:
             loop.set_postfix(loss=loss.item(), avr_loss = losses.avg, acc=acc, avr_acc=accuracy.avg, lr=optimizer.param_groups[0]['lr'])
     return losses.avg, accuracy.avg
@@ -193,11 +197,11 @@ def validate(val_loader, model, criterion):
         # computing output and loss
         with torch.no_grad():
             output = model(input)
-            if args.loss == 'amsoftmax':
+            if config['loss']['loss_type'] == 'amsoftmax':
                 new_target = F.one_hot(target, num_classes=2)
                 loss = criterion(output, new_target)
             else:
-                assert args.loss == 'cross_entropy'
+                assert config['loss']['loss_type'] == 'cross_entropy'
                 loss = criterion(output, target)
         
         # measure accuracy and record loss
@@ -217,29 +221,6 @@ def validate(val_loader, model, criterion):
     print(f'val accuracy on epoch: {round(accuracy.avg, 3)}')
 
     return accuracy.avg
-
-def test_on_val(val_loader, model):
-    global config
-    ''' compute AUC, EER metrics '''
-    model.eval()
-    proba_accum = np.array([])
-    target_accum = np.array([])
-    for input, target in val_loader:
-        if config['data']['cuda']:
-            input = input.cuda(device=args.GPU)
-            target = target.cuda(device=args.GPU)
-        with torch.no_grad():
-            output = model(input)
-            positive_probabilities = F.softmax(output, dim=-1)[:,1].cpu().numpy()
-        proba_accum = np.concatenate((proba_accum, positive_probabilities))
-        target = target.cpu().numpy()
-        target_accum = np.concatenate((target_accum, target))
-
-    fpr, tpr, _ = roc_curve(target_accum, proba_accum, pos_label=1)
-    fnr = 1 - tpr
-    EER = fpr[np.nanargmin(np.absolute((fnr - fpr)))]
-    AUC = auc(fpr, tpr)
-    return AUC, EER
 
 if __name__=='__main__':
     main()
