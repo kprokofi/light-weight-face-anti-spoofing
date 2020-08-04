@@ -154,7 +154,7 @@ def train(train_loader, model, criterion, optimizer, epoch):
             new_target = F.one_hot(target, num_classes=2)
             loss = criterion(output, new_target)
         else:
-            assert args.loss == 'cross_entropy'
+            assert config['loss']['loss_type'] == 'cross_entropy'
             loss = criterion(output, target)
 
         # compute gradient and do SGD step
