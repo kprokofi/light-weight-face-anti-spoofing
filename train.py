@@ -20,6 +20,8 @@ from tqdm import tqdm
 from label_smoothing import LabelSmoothingLoss, CrossEntropyReduction
 import config
 from utils import AverageMeter, read_py_config, save_checkpoint, precision
+import os
+from sklearn.metrics import roc_curve, auc
 
 parser = argparse.ArgumentParser(description='antispoofing training')
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -41,7 +43,8 @@ parser.add_argument('--loss', default='cross_entropy', type=str, help='which los
 parser.add_argument('--classes', default=2, type=int, help='number of classes')
 parser.add_argument('--config', type=str, default=os.path.join(current_dir, 'config.py'), required=False,
                         help='Configuration file')
-#global variables
+#global variables and argument parsing
+args = parser.parse_args()
 config = read_py_config(args.config)
 experiment_snapshot = config['checkpoint']['snapshot_name']
 experiment_path = config['checkpoint']['experiment_path']
@@ -51,9 +54,6 @@ BEST_ACCURACY, BEST_AUC, BEST_EER = 0, 0, 0
 
 def main():
     global args, BEST_ACCURACY, BEST_EER, BEST_AUC, config
-
-    # argements parsing
-    args = parser.parse_args()
 
     # loading data
     normalize = A.Normalize(**config['img_norm_cfg'])
@@ -146,7 +146,12 @@ def train(train_loader, model, criterion, optimizer, epoch):
 
         # compute output and loss
         output = model(input)
-        loss = criterion(output, target)
+        if args.loss == 'amsoftmax':
+            new_target = F.one_hot(target, num_classes=2)
+            loss = criterion(output, new_target)
+        else:
+            assert args.loss == 'cross_entropy'
+            loss = criterion(output, target)
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
@@ -154,7 +159,7 @@ def train(train_loader, model, criterion, optimizer, epoch):
         optimizer.step()
 
         # measure accuracy and record loss
-        acc = precision(output.data, target)
+        acc = precision(output.data, target, s=config['amsoftmax']['s'])
         losses.update(loss.item(), input.size(0))
         accuracy.update(acc, input.size(0))
 
@@ -164,7 +169,7 @@ def train(train_loader, model, criterion, optimizer, epoch):
         STEP += 1
 
         # update progress bar
-        loop.set_description(f'Epoch [{epoch}/{config['epochs']['max_epoch']}]')
+        loop.set_description(f'Epoch [{epoch}/{200}]')
         if i % args.print_freq == 0:
             loop.set_postfix(loss=loss.item(), avr_loss = losses.avg, acc=acc, avr_acc=accuracy.avg)
     return losses.avg, accuracy.avg
@@ -187,10 +192,15 @@ def validate(val_loader, model, criterion):
         # computing output and loss
         with torch.no_grad():
             output = model(input)
-            loss = criterion(output, target)
+            if args.loss == 'amsoftmax':
+                new_target = F.one_hot(target, num_classes=2)
+                loss = criterion(output, new_target)
+            else:
+                assert args.loss == 'cross_entropy'
+                loss = criterion(output, target)
         
         # measure accuracy and record loss
-        acc = precision(output.data, target)
+        acc = precision(output.data, target, s=config['amsoftmax']['s'])
         losses.update(loss.item(), input.size(0))
         accuracy.update(acc, input.size(0))
 

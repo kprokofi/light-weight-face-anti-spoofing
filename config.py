@@ -12,7 +12,8 @@ data = {
 }
 
 resize = dict(height=224, width=224)
-checkpoint = dict(snapshot_name="my_best_modelMobileNet2_1.5.pth.tar", 
-                  experiment_path='/home/prokofiev/pytorch/antispoofing/log_tensorboard/MobileNet_LCFAD_7')
+checkpoint = dict(snapshot_name="my_best_modelMobileNet_5_2.pth.tar", 
+                  experiment_path='/home/prokofiev/pytorch/antispoofing/log_tensorboard/MobileNet_LCFAD_5_2')
 loss = dict(amsoftmax = 'amsoftmax', crossentropy='crossentropy')
 epochs = dict(start_epoch=0, max_epoch=200)
+amsoftmax = dict(m=0.5, s=5)
