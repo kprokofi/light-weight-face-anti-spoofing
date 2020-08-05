@@ -22,6 +22,7 @@ from utils import AverageMeter, read_py_config, save_checkpoint, precision, mixu
 import os
 from check_test import evaulate
 from mobilenetv3 import mobilenetv3_large, h_swish
+import sys
 
 parser = argparse.ArgumentParser(description='antispoofing training')
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -76,6 +77,8 @@ def main():
     else:
         assert config['model']['model_type'] == 'Mobilenet3'
         model = mobilenetv3_large()
+        print(model)
+        sys.exit()
         if config['model']['pretrained']:
             model.load_state_dict(torch.load('pretrained/mobilenetv3-large-1cd25616.pth', map_location=f'cuda:{args.GPU}'), strict=False)
             if config['loss']['loss_type'] == 'amsoftmax':
