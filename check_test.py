@@ -1,7 +1,8 @@
 from sklearn.metrics import roc_curve, auc
-import MobilNet2 
+from models import MobileNetV2
+from models import mobilenetv3_large
 from reader_dataset_tmp import LCFAD_test
-from reader_dataset import LCFAD
+from datasets import LCFAD
 import albumentations as A
 import torch
 import numpy as np
@@ -12,7 +13,6 @@ import matplotlib.pyplot as plt
 from scipy.optimize import brentq
 from scipy.interpolate import interp1d
 import matplotlib
-from mobilenetv3 import mobilenetv3_large
 from amsoftmax import AngleSimpleLinear
 
 def load_checkpoint(checkpoint, model):
@@ -100,7 +100,7 @@ if __name__ == "__main__":
     parser.add_argument('--model', type=str, default='mobilenet2', help='which model to use')
     args = parser.parse_args()
     if args.model == 'mobilenet2':
-        model = MobilNet2.MobileNetV2(use_amsoftmax=False) # add variability to the models
+        model = MobileNetV2(use_amsoftmax=False) # add variability to the models
     else:
         model = mobilenetv3_large()
         model.classifier[3] = AngleSimpleLinear(1280, 2)
