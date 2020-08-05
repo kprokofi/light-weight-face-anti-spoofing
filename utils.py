@@ -2,8 +2,10 @@ import os.path as osp
 import sys
 import torch
 from importlib import import_module
-
-
+from torch.autograd import Variable
+import numpy as np
+import torch
+import torch.nn.functional as F
 class AverageMeter(object):
     """Computes and stores the average and current value"""
     def __init__(self):
@@ -60,3 +62,31 @@ def precision(output, target, s=None):
         output = output*s
     accuracy = (output.argmax(dim=1) == target).float().mean().item()
     return accuracy*100
+
+def mixup_target(input, target, alpha, cuda, criterion='amsoftmax', num_classes=2):
+ # compute mix-up augmentation
+    input, target_a, target_b, lam = mixup_data(input, target, alpha, cuda)
+    input, target_a, target_b = map(Variable, (input, target_a, target_b))
+    # compute new target
+    target_a_hot = F.one_hot(target_a, num_classes)
+    target_b_hot = F.one_hot(target_b, num_classes)
+    new_target = lam*target_a_hot + (1-lam)*target_b_hot
+    if criterion == 'amsoftmax':
+        return input, new_target
+    else:
+        assert criterion == 'cross_entropy'
+        return input, target_a, target_b, lam
+
+def mixup_data(x, y, alpha=1.0, cuda=0):
+    '''Returns mixed inputs, pairs of targets, and lambda'''
+    if alpha > 0:
+        lam = np.random.beta(alpha, alpha)
+    else:
+        lam = 1
+
+    batch_size = x.size()[0]
+    index = torch.randperm(batch_size).cuda(device=cuda)
+
+    mixed_x = lam * x + (1 - lam) * x[index, :]
+    y_a, y_b = y, y[index]
+    return mixed_x, y_a, y_b, lam
