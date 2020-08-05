@@ -18,7 +18,6 @@ import cv2 as cv
 import albumentations as A
 from tqdm import tqdm
 from label_smoothing import LabelSmoothingLoss, CrossEntropyReduction
-import config
 from utils import AverageMeter, read_py_config, save_checkpoint, precision
 import os
 from check_test import evaulate
@@ -31,7 +30,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 parser.add_argument('--GPU', type=int, default=1, help='specify which gpu to use')
 parser.add_argument('--print-freq', '-p', default=20, type=int, help='print frequency (default: 20)')
 parser.add_argument('--save_checkpoint', type=bool, default=True, help='whether or not to save your model')
-parser.add_argument('--config', type=str, default=os.path.join(current_dir, 'config.py'), required=False,
+parser.add_argument('--config', type=str, default=os.path.join(current_dir, 'config11.py'), required=False,
                         help='Configuration file')
 
 #global variables and argument parsing
@@ -83,6 +82,7 @@ def main():
                 model.classifier[3] = AngleSimpleLinear(1280, 2)
             else:
                 model.classifier[3] = nn.Linear(1280, 2)
+                model.classifier[2] == nn.Dropout(p=0.5)
 
     #criterion
     if config['loss']['loss_type'] == 'amsoftmax':
