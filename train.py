@@ -18,7 +18,7 @@ import cv2 as cv
 import albumentations as A
 from tqdm import tqdm
 from label_smoothing import LabelSmoothingLoss, CrossEntropyReduction
-from utils import AverageMeter, read_py_config, save_checkpoint, precision
+from utils import AverageMeter, read_py_config, save_checkpoint, precision, mixup_target
 import os
 from check_test import evaulate
 from mobilenetv3 import mobilenetv3_large, h_swish
@@ -30,7 +30,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 parser.add_argument('--GPU', type=int, default=1, help='specify which gpu to use')
 parser.add_argument('--print-freq', '-p', default=20, type=int, help='print frequency (default: 20)')
 parser.add_argument('--save_checkpoint', type=bool, default=True, help='whether or not to save your model')
-parser.add_argument('--config', type=str, default=os.path.join(current_dir, 'config11.py'), required=False,
+parser.add_argument('--config', type=str, default=os.path.join(current_dir, 'config12.py'), required=False,
                         help='Configuration file')
 
 #global variables and argument parsing
@@ -147,15 +147,29 @@ def train(train_loader, model, criterion, optimizer, epoch):
         if config['data']['cuda']:
             input = input.cuda(device=args.GPU)
             target = target.cuda(device=args.GPU)
-
         # compute output and loss
-        output = model(input)
+        
+        if config['aug']['type_aug'] == 'mixup':
+            mixup_output = mixup_target(input, target, config['aug']['alpha'], args.GPU, criterion=config['loss']['loss_type'])
         if config['loss']['loss_type'] == 'amsoftmax':
-            new_target = F.one_hot(target, num_classes=2)
-            loss = criterion(output, new_target)
+            if config['aug']['type_aug'] != None:
+                input, targets = mixup_output
+                output = model(input)
+                loss = criterion(output, targets)
+            else:
+                output = model(input)
+                new_target = F.one_hot(target, num_classes=2)
+                loss = criterion(output, new_target)
         else:
             assert config['loss']['loss_type'] == 'cross_entropy'
-            loss = criterion(output, target)
+            if config['aug']['type_aug'] != None:
+                input, y_a, y_b, lam = mixup_output
+                output = model(input)
+                loss = mixup_criterion(criterion, output, y_a, y_b, lam)
+            else:
+                output = model(input)
+                loss = criterion(output, target)
+            
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
@@ -221,6 +235,9 @@ def validate(val_loader, model, criterion):
     print(f'val accuracy on epoch: {round(accuracy.avg, 3)}')
 
     return accuracy.avg
+
+def mixup_criterion(criterion, pred, y_a, y_b, lam):
+    return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
 
 if __name__=='__main__':
     main()
