@@ -3,26 +3,21 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.utils.data
-import torchvision.transforms as transforms
-import torchvision.datasets as datasets
 from torch.utils.tensorboard import SummaryWriter
 import time
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-import MobilNet2
 from amsoftmax import AMSoftmaxLoss, AngleSimpleLinear
-from reader_dataset import LCFAD
-from torch.autograd import Variable
+from datasets import LCFAD
+from models import MobileNetV2, mobilenetv3_large
 import numpy as np
 import cv2 as cv
 import albumentations as A
 from tqdm import tqdm
-from label_smoothing import LabelSmoothingLoss, CrossEntropyReduction
+import config
 from utils import AverageMeter, read_py_config, save_checkpoint, precision, mixup_target
 import os
 from check_test import evaulate
-from mobilenetv3 import mobilenetv3_large, h_swish
-import sys
 
 parser = argparse.ArgumentParser(description='antispoofing training')
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -73,7 +68,7 @@ def main():
 
     # model
     if config['model']['model_type'] == 'Mobilenet2':
-        model = MobilNet2.MobileNetV2(use_amsoftmax=config['model']['use_amsoftmax'])
+        model = MobileNetV2(use_amsoftmax=config['model']['use_amsoftmax'])
     else:
         assert config['model']['model_type'] == 'Mobilenet3'
         model = mobilenetv3_large()
