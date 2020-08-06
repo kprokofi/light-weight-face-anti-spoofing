@@ -14,6 +14,7 @@ from scipy.interpolate import interp1d
 import matplotlib
 from mobilenetv3 import mobilenetv3_large
 from amsoftmax import AngleSimpleLinear
+import torch.nn as nn
 
 def load_checkpoint(checkpoint, model):
     print("==> Loading checkpoint")
@@ -95,15 +96,16 @@ def DETCurve(fps,fns, EER):
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='antispoofing training')
-    parser.add_argument('--model_name', default='/home/prokofiev/pytorch/antispoofing/log_tensorboard/MobileNet_LCFAD_8/my_best_modelMobileNet_8.pth.tar', type=str)
+    parser.add_argument('--model_name', default='/home/prokofiev/pytorch/antispoofing/log_tensorboard/MobileNet_LCFAD_9/my_best_modelMobileNet_9.pth.tar', type=str)
     parser.add_argument('--draw_graph', default=False, type=bool, help='whether or not to draw graphics')
-    parser.add_argument('--model', type=str, default='mobilenet2', help='which model to use')
+    parser.add_argument('--model', type=str, default='mobilenet3', help='which model to use')
     args = parser.parse_args()
     if args.model == 'mobilenet2':
         model = MobilNet2.MobileNetV2(use_amsoftmax=False) # add variability to the models
     else:
         model = mobilenetv3_large()
-        model.classifier[3] = AngleSimpleLinear(1280, 2)
+        # model.classifier[3] = AngleSimpleLinear(1280, 2)
+        model.classifier[3] = nn.Linear(1280,2)
     model.cuda(device=2)
     normalize = A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     test_transform = A.Compose([
@@ -115,7 +117,7 @@ if __name__ == "__main__":
 
     test_loader = DataLoader(dataset=test_dataset, batch_size=100, shuffle=True, num_workers=2)
 
-    load_checkpoint(torch.load(args.model_name, map_location='cuda:2'), model)
+    
     AUC, EER, accur, fpr, tpr = evaulate(model, test_loader)
     print(f'EER = {EER}')
     print(f'accuracy on test data = {np.mean(accur)}')
