@@ -4,14 +4,11 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.utils.data
 from torch.utils.tensorboard import SummaryWriter
-import time
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-from amsoftmax import AMSoftmaxLoss, AngleSimpleLinear
+from losses import AMSoftmaxLoss, AngleSimpleLinear
 from datasets import LCFAD
 from models import MobileNetV2, mobilenetv3_large
-import numpy as np
-import cv2 as cv
 import albumentations as A
 from tqdm import tqdm
 import config
@@ -54,16 +51,16 @@ def main():
     val_transform = A.Compose([
                 A.Resize(**config['resize']),
                 normalize,
-                ])     
+                ])
 
     train_dataset = LCFAD(root_dir=config['data']['data_root'], train=True, transform=train_transform)
     val_dataset = LCFAD(root_dir=config['data']['data_root'], train=False, transform=val_transform)
-    train_loader = DataLoader(dataset=train_dataset, batch_size=config['data']['batch_size'], 
-                                                    shuffle=True, pin_memory=config['data']['pin_memory'], 
+    train_loader = DataLoader(dataset=train_dataset, batch_size=config['data']['batch_size'],
+                                                    shuffle=True, pin_memory=config['data']['pin_memory'],
                                                     num_workers=config['data']['data_loader_workers'])
 
-    val_loader = DataLoader(dataset=val_dataset, batch_size=config['data']['batch_size'], 
-                                                shuffle=True, pin_memory=config['data']['pin_memory'], 
+    val_loader = DataLoader(dataset=val_dataset, batch_size=config['data']['batch_size'],
+                                                shuffle=True, pin_memory=config['data']['pin_memory'],
                                                 num_workers=config['data']['data_loader_workers'])
 
     # model
@@ -72,8 +69,6 @@ def main():
     else:
         assert config['model']['model_type'] == 'Mobilenet3'
         model = mobilenetv3_large()
-        print(model)
-        sys.exit()
         if config['model']['pretrained']:
             model.load_state_dict(torch.load('pretrained/mobilenetv3-large-1cd25616.pth', map_location=f'cuda:{args.GPU}'), strict=False)
             if config['loss']['loss_type'] == 'amsoftmax':
@@ -87,7 +82,7 @@ def main():
         criterion = AMSoftmaxLoss(**config['amsoftmax'])
     else:
         criterion = nn.CrossEntropyLoss()
-    
+
     optimizer = torch.optim.SGD(model.parameters(), **config['optimizer'])
     scheduler = optim.lr_scheduler.MultiStepLR(optimizer, **config['schedular'])
 
@@ -125,7 +120,7 @@ def main():
             BEST_AUC = max(AUC, BEST_AUC)
 
         print(f'best val accuracy:  {BEST_ACCURACY}  best AUC: {BEST_AUC}  best EER: {BEST_EER}')
-        
+
 def train(train_loader, model, criterion, optimizer, epoch):
     global STEP, args, config
     # meters
@@ -146,7 +141,7 @@ def train(train_loader, model, criterion, optimizer, epoch):
             input = input.cuda(device=args.GPU)
             target = target.cuda(device=args.GPU)
         # compute output and loss
-        
+
         if config['aug']['type_aug'] == 'mixup':
             mixup_output = mixup_target(input, target, config['aug']['alpha'], args.GPU, criterion=config['loss']['loss_type'])
         if config['loss']['loss_type'] == 'amsoftmax':
@@ -167,7 +162,7 @@ def train(train_loader, model, criterion, optimizer, epoch):
             else:
                 output = model(input)
                 loss = criterion(output, target)
-            
+
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
@@ -215,7 +210,7 @@ def validate(val_loader, model, criterion):
             else:
                 assert config['loss']['loss_type'] == 'cross_entropy'
                 loss = criterion(output, target)
-        
+
         # measure accuracy and record loss
         acc = precision(output.data, target, s=config['amsoftmax']['s'])
         losses.update(loss.item(), input.size(0))

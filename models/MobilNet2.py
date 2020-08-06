@@ -2,8 +2,7 @@
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from amsoftmax import AngleSimpleLinear
+from losses import AngleSimpleLinear
 
 class InvertedResidual(nn.Module):
     '''expand + depthwise + pointwise'''
@@ -47,7 +46,7 @@ class InvertedResidual(nn.Module):
 class MobileNetV2(nn.Module):
     # (expansion, out_channels, num_blocks, stride)
     cfg = [(1,  16, 1, 1),
-           (6,  24, 2, 2), 
+           (6,  24, 2, 2),
            (6,  32, 3, 2),
            (6,  64, 4, 2),
            (6,  96, 3, 1),
