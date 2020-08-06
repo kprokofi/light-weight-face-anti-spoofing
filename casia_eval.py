@@ -9,9 +9,6 @@ from torch import nn
 from sklearn import metrics
 from argparse import ArgumentParser
 import utils
-import numpy as np
-import torch
-import cv2 as cv
 
 import albumentations as A
 
@@ -70,7 +67,7 @@ def main(args, config):
     val_transform = A.Compose([
                 A.Resize(**config['resize']),
                 A.Normalize(**config['img_norm_cfg']),
-                ])    
+                ])
     model.eval()
     with torch.no_grad():
         dataset = CasiaSurfDataset(

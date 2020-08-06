@@ -4,8 +4,9 @@ import torch
 from importlib import import_module
 from torch.autograd import Variable
 import numpy as np
-import torch
 import torch.nn.functional as F
+
+
 class AverageMeter(object):
     """Computes and stores the average and current value"""
     def __init__(self):

@@ -5,7 +5,6 @@ import cv2 as cv
 from tqdm import tqdm
 import torch
 from torch.utils.data import Dataset
-import numpy as np
 
 
 class CelebASpoofDataset(Dataset):
