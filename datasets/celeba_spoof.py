@@ -5,7 +5,6 @@ import cv2 as cv
 from tqdm import tqdm
 import torch
 from torch.utils.data import Dataset
-import numpy as np
 
 
 class CelebASpoofDataset(Dataset):
@@ -61,6 +60,3 @@ class CelebASpoofDataset(Dataset):
 
 def clamp(x, min_x, max_x):
     return min(max(x, min_x), max_x)
-
-
-d = CelebASpoofDataset('/mnt/big_ssd/CelebA_Spoof/')
