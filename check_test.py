@@ -2,7 +2,7 @@ from sklearn.metrics import roc_curve, auc
 from models import MobileNetV2
 from models import mobilenetv3_large
 from reader_dataset_tmp import LCFAD_test
-from datasets import LCFAD
+from datasets.lcc_fasd import LCFAD
 import albumentations as A
 import torch
 import numpy as np
@@ -15,6 +15,7 @@ from scipy.interpolate import interp1d
 import matplotlib
 from amsoftmax import AngleSimpleLinear
 import torch.nn as nn
+from sklearn import metrics
 
 def load_checkpoint(checkpoint, model):
     print("==> Loading checkpoint")
@@ -27,17 +28,33 @@ def evaulate(model, loader, compute_accuracy=True, GPU=2):
     proba_accum = np.array([])
     target_accum = np.array([])
     accur=[]
+    tp, tn, fp, fn = 0, 0, 0, 0
     for input, target in loader:
-        input = input.cuda(device=GPU)
-        target = target.cuda(device=GPU)
+        input = input.cpu()
+        target = target.cpu()
+
         with torch.no_grad():
             output = model(input)
+            tn_batch, fp_batch, fn_batch, tp_batch = metrics.confusion_matrix(y_true=target,
+                                                                              y_pred=torch.max(
+                                                                                  output.data, 1)[1],
+                                                                              labels=[0, 1]).ravel()
+            
+            tp += tp_batch
+            tn += tn_batch
+            fp += fp_batch
+            fn += fn_batch
+
             if compute_accuracy:
                 accur.append((output.argmax(dim=1) == target).float().mean().item())
             positive_probabilities = F.softmax(output, dim=-1)[:,1].cpu().numpy()
         proba_accum = np.concatenate((proba_accum, positive_probabilities))
         target = target.cpu().numpy()
         target_accum = np.concatenate((target_accum, target))
+
+    apcer = fp / (tn + fp) if fp != 0 else 0
+    bpcer = fn / (fn + tp) if fn != 0 else 0
+    acer = (apcer + bpcer) / 2
 
     fpr, tpr, threshold = roc_curve(target_accum, proba_accum, pos_label=1)
     fnr = 1 - tpr
@@ -48,7 +65,7 @@ def evaulate(model, loader, compute_accuracy=True, GPU=2):
     else:
         EER = fnr_EER
     AUC = auc(fpr, tpr)
-    return AUC, EER, accur, fpr, tpr
+    return AUC, EER, accur, fpr, tpr, tn, fn, apcer, bpcer
 
 def plot_ROC_curve(fpr, tpr, name_fig='ROC curve 8'):
     plt.figure()
@@ -106,7 +123,8 @@ if __name__ == "__main__":
         model = mobilenetv3_large()
         # model.classifier[3] = AngleSimpleLinear(1280, 2)
         model.classifier[3] = nn.Linear(1280,2)
-    model.cuda(device=2)
+        load_checkpoint(torch.load(args.model_name, map_location='cpu'), model)
+    model.cpu()
     normalize = A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     test_transform = A.Compose([
                 A.Resize(224, 224),
@@ -118,10 +136,14 @@ if __name__ == "__main__":
     test_loader = DataLoader(dataset=test_dataset, batch_size=100, shuffle=True, num_workers=2)
 
     
-    AUC, EER, accur, fpr, tpr = evaulate(model, test_loader)
+    AUC, EER, accur, fpr, tpr, tn, fn, apcer, bpcer = evaulate(model, test_loader)
     print(f'EER = {EER}')
     print(f'accuracy on test data = {np.mean(accur)}')
     print(f'AUC = {AUC}')
+    print(f'tn = {tn}')
+    print(f'fn = {fn}')
+    print(f'apcer = {apcer}')
+    print(f'bpcer = {bpcer}')
     if args.draw_graph:
         fnr = 1 - tpr
         plot_ROC_curve(fpr, tpr)

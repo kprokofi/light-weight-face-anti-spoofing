@@ -10,14 +10,6 @@ class LCFAD(Dataset):
         self.root_dir = root_dir
         self.transform = transform
         if train:
-            # self.augmentation = A.Compose([
-            #                 A.Resize(224, 224),
-            #                 A.CenterCrop(100, 100, p=0.5),
-            #                 A.HorizontalFlip(p=0.5),
-            #                 A.Rotate(limit=(-90, 90), p=0.5),
-            #                 A.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-            #                 A.pytorch.transforms.ToTensor()
-            #                 ])
             name_of_real_img = filter(lambda x: x.endswith('.png'), 
                     os.listdir(os.path.join(root_dir, 'LCC_FASD_training/real')))
             real_img = list(map(lambda x: os.path.join('LCC_FASD_training/real', x), name_of_real_img))
@@ -30,12 +22,7 @@ class LCFAD(Dataset):
             self.labels = torch.cat((torch.ones(len(spoof_img), dtype=torch.long),
                                     (torch.zeros(len(real_img), dtype=torch.long))))
         else:
-            assert train == False
-            # self.augmentation = A.Compose([
-            #     A.Resize(224, 224),
-            #     A.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-            #     A.pytorch.transforms.ToTensor()
-            #     ])     
+            assert train == False   
             name_of_real_img = filter(lambda x: x.endswith('.png'), 
                     os.listdir(os.path.join(root_dir, 'LCC_FASD_development/real')))
             real_img = list(map(lambda x: os.path.join('LCC_FASD_development/real', x), name_of_real_img))
@@ -54,7 +41,6 @@ class LCFAD(Dataset):
         image = cv.cvtColor(image, cv.COLOR_BGR2RGB)
         if self.transform:
             image = self.transform(image=image)['image']
-        # image = self.augmentation(image=image)
         # [batch, channels, height, width]
         image = np.transpose(image, (2, 0, 1)).astype(np.float32)
         y_label = self.labels[index]

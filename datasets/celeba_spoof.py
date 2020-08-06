@@ -62,5 +62,5 @@ class CelebASpoofDataset(Dataset):
 def clamp(x, min_x, max_x):
     return min(max(x, min_x), max_x)
 
-
-d = CelebASpoofDataset('/mnt/big_ssd/CelebA_Spoof/')
+if __name__ == '__main__':
+    d = CelebASpoofDataset('/mnt/big_ssd/CelebA_Spoof/')
