@@ -1,21 +1,25 @@
 from sklearn.metrics import roc_curve, auc
 from models import MobileNetV2
 from models import mobilenetv3_large
+from models.mobilenetv3 import h_swish
 from reader_dataset_tmp import LCFAD_test
 from datasets.lcc_fasd import LCFAD
+from datasets.casia_surf import CasiaSurfDataset
 import albumentations as A
 import torch
 import numpy as np
 import argparse
+from utils import make_loader, make_dataset
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
 from scipy.optimize import brentq
 from scipy.interpolate import interp1d
 import matplotlib
-from amsoftmax import AngleSimpleLinear
+from losses.am_softmax import AngleSimpleLinear
 import torch.nn as nn
 from sklearn import metrics
+from casia_eval import evaluate as casia_eval
 
 def load_checkpoint(checkpoint, model):
     print("==> Loading checkpoint")
@@ -30,15 +34,15 @@ def evaulate(model, loader, compute_accuracy=True, GPU=2):
     accur=[]
     tp, tn, fp, fn = 0, 0, 0, 0
     for input, target in loader:
-        input = input.cpu()
-        target = target.cpu()
-
+        input = input.cuda(device=GPU)
+        target = target.cuda(device=GPU)
         with torch.no_grad():
             output = model(input)
-            tn_batch, fp_batch, fn_batch, tp_batch = metrics.confusion_matrix(y_true=target,
-                                                                              y_pred=torch.max(
-                                                                                  output.data, 1)[1],
-                                                                              labels=[0, 1]).ravel()
+            y_true = target.detach().cpu().numpy()
+            y_pred = output.argmax(dim=1).detach().cpu().numpy()
+            tn_batch, fp_batch, fn_batch, tp_batch = metrics.confusion_matrix(y_true=y_true, 
+                                                                              y_pred=y_pred, 
+                                                                              ).ravel()
             
             tp += tp_batch
             tn += tn_batch
@@ -46,11 +50,10 @@ def evaulate(model, loader, compute_accuracy=True, GPU=2):
             fn += fn_batch
 
             if compute_accuracy:
-                accur.append((output.argmax(dim=1) == target).float().mean().item())
+                accur.append((y_pred == y_true).mean())
             positive_probabilities = F.softmax(output, dim=-1)[:,1].cpu().numpy()
         proba_accum = np.concatenate((proba_accum, positive_probabilities))
-        target = target.cpu().numpy()
-        target_accum = np.concatenate((target_accum, target))
+        target_accum = np.concatenate((target_accum, y_true))
 
     apcer = fp / (tn + fp) if fp != 0 else 0
     bpcer = fn / (fn + tp) if fn != 0 else 0
@@ -65,7 +68,7 @@ def evaulate(model, loader, compute_accuracy=True, GPU=2):
     else:
         EER = fnr_EER
     AUC = auc(fpr, tpr)
-    return AUC, EER, accur, fpr, tpr, tn, fn, apcer, bpcer
+    return AUC, EER, accur, apcer, bpcer, acer
 
 def plot_ROC_curve(fpr, tpr, name_fig='ROC curve 8'):
     plt.figure()
@@ -113,40 +116,51 @@ def DETCurve(fps,fns, EER):
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='antispoofing training')
-    parser.add_argument('--model_name', default='/home/prokofiev/pytorch/antispoofing/log_tensorboard/MobileNet_LCFAD_9/my_best_modelMobileNet_9.pth.tar', type=str)
+    parser.add_argument('--model_name', default='/home/prokofiev/pytorch/antispoofing/log_tensorboard/MobileNet_LCFAD_16/my_best_modelMobileNet_16.pth.tar', type=str)
     parser.add_argument('--draw_graph', default=False, type=bool, help='whether or not to draw graphics')
     parser.add_argument('--model', type=str, default='mobilenet3', help='which model to use')
+    parser.add_argument('--dataset', type=str, default='LCCFAD', help='concrete which dataset to use, options: LCCFAD, CASIA')
     args = parser.parse_args()
+
     if args.model == 'mobilenet2':
         model = MobileNetV2(use_amsoftmax=False) # add variability to the models
     else:
         model = mobilenetv3_large()
-        # model.classifier[3] = AngleSimpleLinear(1280, 2)
-        model.classifier[3] = nn.Linear(1280,2)
-        load_checkpoint(torch.load(args.model_name, map_location='cpu'), model)
-    model.cpu()
+        model.classifier = nn.Sequential(
+                                                nn.Linear(960, 128),
+                                                nn.Dropout(0.2),
+                                                nn.BatchNorm1d(128),
+                                                h_swish(),
+                                                AngleSimpleLinear(128, 2),
+                                            )
+        # model.classifier[3] = nn.Linear(1280,2)
+        load_checkpoint(torch.load(args.model_name, map_location='cuda:2'), model)
+    model.cuda(device=2)
     normalize = A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     test_transform = A.Compose([
                 A.Resize(224, 224),
                 normalize,
-                ])     
+                ])  
 
-    test_dataset = LCFAD_test(root_dir='/home/prokofiev/pytorch/LCC_FASD', transform=test_transform)
-
-    test_loader = DataLoader(dataset=test_dataset, batch_size=100, shuffle=True, num_workers=2)
-
+    if args.dataset == 'LCCFAD':
+        test_dataset = LCFAD_test(root_dir='/home/prokofiev/pytorch/LCC_FASD', transform=test_transform)
+    else:
+        assert args.dataset == 'CASIA'
+        test_dataset = CasiaSurfDataset(protocol=1, dir='/home/prokofiev/pytorch/antispoofing/CASIA', mode='dev', transform=test_transform)
     
-    AUC, EER, accur, fpr, tpr, tn, fn, apcer, bpcer = evaulate(model, test_loader)
+    test_loader = DataLoader(dataset=test_dataset, batch_size=100, shuffle=True, num_workers=2)
+    
+    AUC, EER, accur, apcer, bpcer, acer  = evaulate(model, test_loader)
+
     print(f'EER = {EER}')
     print(f'accuracy on test data = {np.mean(accur)}')
     print(f'AUC = {AUC}')
-    print(f'tn = {tn}')
-    print(f'fn = {fn}')
     print(f'apcer = {apcer}')
     print(f'bpcer = {bpcer}')
+    print(f'acer = {acer}')
+
     if args.draw_graph:
         fnr = 1 - tpr
         plot_ROC_curve(fpr, tpr)
         plot_curve_DET(fpr, fnr, EER)
         DETCurve(fpr, fnr, EER)
-    

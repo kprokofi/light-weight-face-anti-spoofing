@@ -5,14 +5,12 @@ import torch.optim as optim
 import torch.utils.data
 from torch.utils.tensorboard import SummaryWriter
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
 from losses import AMSoftmaxLoss, AngleSimpleLinear
-from datasets import LCFAD
 from models import MobileNetV2, mobilenetv3_large
+from models.mobilenetv3 import h_swish
 import albumentations as A
 from tqdm import tqdm
-import config
-from utils import AverageMeter, read_py_config, save_checkpoint, precision, mixup_target
+from utils import AverageMeter, read_py_config, save_checkpoint, precision, mixup_target, freeze_layers, make_dataset, make_loader
 import os
 from check_test import evaulate
 
@@ -23,17 +21,18 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 parser.add_argument('--GPU', type=int, default=1, help='specify which gpu to use')
 parser.add_argument('--print-freq', '-p', default=20, type=int, help='print frequency (default: 20)')
 parser.add_argument('--save_checkpoint', type=bool, default=True, help='whether or not to save your model')
-parser.add_argument('--config', type=str, default=os.path.join(current_dir, 'config12.py'), required=False,
+parser.add_argument('--config', type=str, default='config.py', required=False,
                         help='Configuration file')
 
 #global variables and argument parsing
 args = parser.parse_args()
-config = read_py_config(args.config)
+path_to_config = os.path.join(current_dir, args.config)
+config = read_py_config(path_to_config)
 experiment_snapshot = config['checkpoint']['snapshot_name']
 experiment_path = config['checkpoint']['experiment_path']
 WRITER = SummaryWriter(experiment_path)
 STEP, VAL_STEP = 0, 0
-BEST_ACCURACY, BEST_AUC, BEST_EER = 0, 0, 1000
+BEST_ACCURACY, BEST_AUC, BEST_EER, BEST_ACER = 0, 0, float('inf'), float('inf')
 
 def main():
     global args, BEST_ACCURACY, BEST_EER, BEST_AUC, config
@@ -52,16 +51,10 @@ def main():
                 A.Resize(**config['resize']),
                 normalize,
                 ])
-
-    train_dataset = LCFAD(root_dir=config['data']['data_root'], train=True, transform=train_transform)
-    val_dataset = LCFAD(root_dir=config['data']['data_root'], train=False, transform=val_transform)
-    train_loader = DataLoader(dataset=train_dataset, batch_size=config['data']['batch_size'],
-                                                    shuffle=True, pin_memory=config['data']['pin_memory'],
-                                                    num_workers=config['data']['data_loader_workers'])
-
-    val_loader = DataLoader(dataset=val_dataset, batch_size=config['data']['batch_size'],
-                                                shuffle=True, pin_memory=config['data']['pin_memory'],
-                                                num_workers=config['data']['data_loader_workers'])
+    
+    # load data
+    train_dataset, val_dataset = make_dataset(config, train_transform, val_transform)
+    train_loader, val_loader = make_loader(train_dataset, val_dataset, config)
 
     # model
     if config['model']['model_type'] == 'Mobilenet2':
@@ -72,10 +65,17 @@ def main():
         if config['model']['pretrained']:
             model.load_state_dict(torch.load('pretrained/mobilenetv3-large-1cd25616.pth', map_location=f'cuda:{args.GPU}'), strict=False)
             if config['loss']['loss_type'] == 'amsoftmax':
-                model.classifier[3] = AngleSimpleLinear(1280, 2)
+                model.classifier = nn.Sequential(
+                                                nn.Linear(960, 128),
+                                                nn.Dropout(0.2),
+                                                nn.BatchNorm1d(128),
+                                                h_swish(),
+                                                AngleSimpleLinear(128, 2),
+                                            )
             else:
                 model.classifier[3] = nn.Linear(1280, 2)
                 model.classifier[2] == nn.Dropout(p=0.5)
+                
 
     #criterion
     if config['loss']['loss_type'] == 'amsoftmax':
@@ -100,8 +100,9 @@ def main():
 
         # remember best accuracy, AUC and EER and save checkpoint
         if accuracy > BEST_ACCURACY and args.save_checkpoint:
-            AUC, EER, _, _, _ = evaulate(model, val_loader, compute_accuracy=False, GPU=args.GPU)
-            if EER < BEST_EER or AUC > BEST_AUC:
+            AUC, EER, accur, apcer, bpcer, acer = evaulate(model, val_loader, compute_accuracy=False, GPU=args.GPU)
+            print(f'epoch: {epoch}   AUC: {AUC}   EER: {EER}   APCER: {apcer}   BPCER: {bpcer}   ACER: {acer}')
+            if EER < BEST_EER or AUC > BEST_AUC or acer < BEST_ACER:
                 checkpoint = {'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch':epoch}
                 save_checkpoint(checkpoint, f'{experiment_path}/{experiment_snapshot}')
                 BEST_ACCURACY = max(accuracy, BEST_ACCURACY)
@@ -110,9 +111,9 @@ def main():
             BEST_AUC = max(AUC, BEST_AUC)
 
         # evaluate on val every 30 epoch and save snapshot if better results achieved
-        if (epoch%30 == 0 or epoch == config['epochs']['max_epoch']) and args.save_checkpoint:
-            AUC, EER, _, _, _ = evaulate(model, val_loader, compute_accuracy=False, GPU=args.GPU)
-            print(f'epoch: {epoch}   AUC: {AUC}   EER: {EER}')
+        if (epoch%10 == 0 or epoch == config['epochs']['max_epoch']) and args.save_checkpoint:
+            AUC, EER, accur, apcer, bpcer, acer = evaulate(model, val_loader, compute_accuracy=False, GPU=args.GPU)
+            print(f'epoch: {epoch}   AUC: {AUC}   EER: {EER}   APCER: {apcer}   BPCER: {bpcer}   ACER: {acer}')
             if EER < BEST_EER or AUC > BEST_AUC:
                 checkpoint = {'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch':epoch}
                 save_checkpoint(checkpoint, f'{experiment_path}/{experiment_snapshot}')

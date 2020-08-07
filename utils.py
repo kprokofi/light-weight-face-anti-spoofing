@@ -5,7 +5,8 @@ from importlib import import_module
 from torch.autograd import Variable
 import numpy as np
 import torch.nn.functional as F
-
+from datasets import LCFAD, CelebASpoofDataset
+from torch.utils.data import DataLoader
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""
@@ -91,3 +92,40 @@ def mixup_data(x, y, alpha=1.0, cuda=0):
     mixed_x = lam * x + (1 - lam) * x[index, :]
     y_a, y_b = y, y[index]
     return mixed_x, y_a, y_b, lam
+    
+def freeze_layers(model, open_layers):
+
+    for name, module in model.named_children():
+        if name in open_layers:
+            module.train()
+            for p in module.parameters():
+                p.requires_grad = True
+        else:
+            module.eval()
+            for p in module.parameters():
+                p.requires_grad = False
+
+def make_dataset(config: dict, train_transform: object = None, val_transform: object = None):
+    ''' make train and val datasets ''' 
+    if config['dataset'] == 'LCFAD':
+        train =  LCFAD(root_dir=config['data']['data_root'], train=True, transform=train_transform)
+        val = LCFAD(root_dir=config['data']['data_root'], train=False, transform=val_transform)
+    elif config['dataset'] == 'celeba-spoof':
+        train =  CelebASpoofDataset(root_folder=config['data']['data_root'], test_mode=False, transform=train_transform)
+        val = CelebASpoofDataset(root_folder=config['data']['data_root'], test_mode=True, transform=val_transform)
+    else:
+        raise NameError
+    return train, val
+
+def make_loader(train, val, config):
+    ''' make data loader from given train and val dataset
+    train, val -> train loader, val loader'''
+
+    train_loader = DataLoader(dataset=train, batch_size=config['data']['batch_size'],
+                                                    shuffle=True, pin_memory=config['data']['pin_memory'],
+                                                    num_workers=config['data']['data_loader_workers'])
+
+    val_loader = DataLoader(dataset=val, batch_size=config['data']['batch_size'],
+                                                shuffle=True, pin_memory=config['data']['pin_memory'],
+                                                num_workers=config['data']['data_loader_workers'])
+    return train_loader, val_loader
