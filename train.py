@@ -66,15 +66,15 @@ def main():
         if config['loss']['loss_type'] == 'amsoftmax':
             model.classifier = nn.Sequential(
                                                 nn.Linear(960, 128),
-                                                nn.Dropout(0.5),
+                                                nn.Dropout(0.2),
                                                 nn.BatchNorm1d(128),
                                                 h_swish(),
                                                 AngleSimpleLinear(128, 2),
                                             )
         else:
             assert config['loss']['loss_type'] == 'cross_entropy'
-            model.classifier[3] = nn.Linear(1280, 2)
-            model.classifier[2] == nn.Dropout(p=0.5)
+            model.classifier[1] == nn.Dropout(p=0.5)
+            model.classifier[4] = nn.Linear(1280, 2)
                 
 
     #criterion
