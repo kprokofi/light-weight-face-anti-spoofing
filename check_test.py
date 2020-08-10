@@ -38,6 +38,7 @@ def evaulate(model, loader, compute_accuracy=True, GPU=2):
     for input, target in loader:
         input = input.cuda(device=GPU)
         target = target.cuda(device=GPU)
+        # target = 1 - target
         with torch.no_grad():
             output = model(input)
             y_true = target.detach().cpu().numpy()
@@ -118,7 +119,7 @@ def DETCurve(fps,fns, EER):
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='antispoofing training')
-    parser.add_argument('--model_name', default='/home/prokofiev/pytorch/antispoofing/log_tensorboard/MobileNet_LCFAD_21_2/MobileNet3_21_2.pth.tar', type=str)
+    parser.add_argument('--model_name', default='/home/prokofiev/pytorch/antispoofing/log_tensorboard/MobileNet_Celeba_23/MobileNet3_23.pth.tar', type=str)
     parser.add_argument('--draw_graph', default=False, type=bool, help='whether or not to draw graphics')
     parser.add_argument('--model', type=str, default='mobilenet3', help='which model to use')
     parser.add_argument('--dataset', type=str, default='LCCFAD', help='concrete which dataset to use, options: LCCFAD, CASIA')
@@ -154,7 +155,7 @@ if __name__ == "__main__":
     
     test_loader = DataLoader(dataset=test_dataset, batch_size=100, shuffle=True, num_workers=2)
     
-    AUC, EER, accur, apcer, bpcer, acer, tpr, fpr  = evaulate(model, test_loader)
+    AUC, EER, accur, apcer, bpcer, acer  = evaulate(model, test_loader)
 
     print(f'EER = {EER}')
     print(f'accuracy on test data = {np.mean(accur)}')
