@@ -17,7 +17,7 @@ class AngleSimpleLinear(nn.Module):
 
     def forward(self, x):
         cos_theta = F.normalize(x, dim=1).mm(F.normalize(self.weight, dim=0))
-        return cos_theta.clamp(-1, 1)
+        return cos_theta.clamp(-1.0 + 1e-7, 1.0 - 1e-7)
 
 
 def focal_loss(input_values, gamma):
@@ -33,8 +33,8 @@ def label_smoothing(classes, y_hot, smoothing=0.1, dim=-1):
 
 class AMSoftmaxLoss(nn.Module):
     """Computes the AM-Softmax loss with cos or arc margin"""
-    margin_types = ['cos', 'arc']
-    def __init__(self, margin_type='cos', label_smooth=False, smoothing=0.1, gamma=0., m=0.5, s=30, t=1.):
+    margin_types = ['cos', 'arc', 'adacos']
+    def __init__(self, margin_type='cos', num_classes=2, label_smooth=False, smoothing=0.1, gamma=0., m=0.5, s=30, t=1.):
         ''' label smoothing - flag whether or not to use label smoothing '''
         super(AMSoftmaxLoss, self).__init__()
         assert margin_type in AMSoftmaxLoss.margin_types
@@ -44,7 +44,11 @@ class AMSoftmaxLoss(nn.Module):
         assert m > 0
         self.m = m
         assert s > 0
-        self.s = s
+        if self.margin_type in ['arc','cos',]:
+            self.s = s
+        else:
+            assert self.margin_type == 'adacos'
+            self.s = math.sqrt(2) * math.log(num_classes - 1)
         self.cos_m = math.cos(m)
         self.sin_m = math.sin(m)
         self.th = math.cos(math.pi - m)
@@ -55,24 +59,41 @@ class AMSoftmaxLoss(nn.Module):
 
     def forward(self, cos_theta, target):
         ''' target - one hot vector '''
+        self.classes = target.size(1)
         if self.label_smooth:
-            classes = target.size(1)
-            target = label_smoothing(classes=classes, y_hot=target, smoothing=self.smoothing)
+            target = label_smoothing(classes=self.classes, y_hot=target, smoothing=self.smoothing)
         # fold one_hot to one vector [batch size]
         fold_target = target.argmax(dim=1)
         if self.margin_type == 'cos':
             phi_theta = cos_theta - self.m
-        else:
+        elif self.margin_type == 'arc':
             sine = torch.sqrt(1.0 - torch.pow(cos_theta, 2))
             phi_theta = cos_theta * self.cos_m - sine * self.sin_m #cos(theta+m)
             phi_theta = torch.where(cos_theta > self.th, phi_theta, cos_theta - self.sin_m * self.m)
-
-        index = torch.zeros_like(cos_theta, dtype=torch.uint8)
-        index.scatter_(1, fold_target.data.view(-1, 1), 1)
-        output = torch.where(index, phi_theta, cos_theta)
+        else:
+            assert self.margin_type == 'adacos'
+            # compute outpute for adacos margin
+            phi_theta = torch.acos(cos_theta)
+            phi_theta = torch.cos(phi_theta + self.m)
+            one_hot = F.one_hot(cos_theta, num_classes=self.classes)
+            # one_hot = torch.zeros_like(cos_theta)
+            # one_hot.scatter_(1, fold_target.view(-1, 1).long(), 1)
+            output = torch.where(one_hot.bool(), phi_theta, cos_theta)
+            with torch.no_grad():
+                # compute adaptive rescaling parameter
+                B_avg = torch.where(one_hot < 1, torch.exp(self.s * cos_theta), torch.zeros_like(cos_theta))
+                B_avg = torch.sum(B_avg) / cos_theta.size(0)
+                # print(B_avg)
+                theta_med = torch.median(phi_theta[one_hot == 1])
+                self.s = torch.log(B_avg) / torch.cos(torch.min(math.pi/4 * torch.ones_like(theta_med), theta_med))
+        # compute output for arc and cos margins
+        if self.margin_type in ['arc', 'cos']:
+            index = torch.zeros_like(cos_theta, dtype=torch.uint8)
+            index.scatter_(1, fold_target.data.view(-1, 1), 1)
+            output = torch.where(index.bool(), phi_theta, cos_theta)
 
         if self.gamma == 0 and self.t == 1.:
-            pred = F.log_softmax(output, dim=-1)
+            pred = F.log_softmax(self.s*output, dim=-1)
             return torch.mean(torch.sum(-target * pred, dim=-1))
 
         if self.t > 1:
