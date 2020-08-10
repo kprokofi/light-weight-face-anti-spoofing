@@ -5,7 +5,7 @@ import cv2 as cv
 from tqdm import tqdm
 import torch
 from torch.utils.data import Dataset
-
+import numpy as np
 
 class CelebASpoofDataset(Dataset):
     def __init__(self, root_folder, test_mode=False, transform=None):
@@ -24,8 +24,8 @@ class CelebASpoofDataset(Dataset):
         return len(self.data)
 
     def __getitem__(self, idx):
-        data_item = self.data[idx]
-        img = cv.imread(data_item['path'])
+        data_item = self.data[str(idx)]
+        img = cv.imread(os.path.join(self.root_folder, data_item['path']))
         bbox = data_item['bbox']
 
         real_h, real_w, _ = img.shape
@@ -38,9 +38,8 @@ class CelebASpoofDataset(Dataset):
         cropped_face = cv.cvtColor(cropped_face, cv.COLOR_BGR2RGB)
         if self.transform:
             cropped_face = self.transform(image=cropped_face)['image']
-
-        return (torch.tensor(cropped_face), data_item['labels'][42]) #see readme of the CelebA-Spoof to get layout of labels
-
+        cropped_face = np.transpose(cropped_face, (2, 0, 1)).astype(np.float32)
+        return (torch.tensor(cropped_face), int(data_item['labels'][43])) #see readme of the CelebA-Spoof to get layout of labels
 
 def clamp(x, min_x, max_x):
     return min(max(x, min_x), max_x)

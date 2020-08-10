@@ -19,7 +19,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 
 # parse arguments
 parser.add_argument('--GPU', type=int, default=1, help='specify which gpu to use')
-parser.add_argument('--print-freq', '-p', default=20, type=int, help='print frequency (default: 20)')
+parser.add_argument('--print-freq', '-p', default=5, type=int, help='print frequency (default: 20)')
 parser.add_argument('--save_checkpoint', type=bool, default=True, help='whether or not to save your model')
 parser.add_argument('--config', type=str, default='config.py', required=False,
                         help='Configuration file')
@@ -33,9 +33,8 @@ experiment_path = config['checkpoint']['experiment_path']
 WRITER = SummaryWriter(experiment_path)
 STEP, VAL_STEP = 0, 0
 BEST_ACCURACY, BEST_AUC, BEST_EER, BEST_ACER = 0, 0, float('inf'), float('inf')
-
 def main():
-    global args, BEST_ACCURACY, BEST_EER, BEST_AUC, config
+    global args, BEST_ACCURACY, BEST_EER, BEST_AUC, BEST_ACER, config
 
     # loading data
     normalize = A.Normalize(**config['img_norm_cfg'])
@@ -64,17 +63,18 @@ def main():
         model = mobilenetv3_large()
         if config['model']['pretrained']:
             model.load_state_dict(torch.load('pretrained/mobilenetv3-large-1cd25616.pth', map_location=f'cuda:{args.GPU}'), strict=False)
-            if config['loss']['loss_type'] == 'amsoftmax':
-                model.classifier = nn.Sequential(
+        if config['loss']['loss_type'] == 'amsoftmax':
+            model.classifier = nn.Sequential(
                                                 nn.Linear(960, 128),
-                                                nn.Dropout(0.2),
+                                                nn.Dropout(0.5),
                                                 nn.BatchNorm1d(128),
                                                 h_swish(),
                                                 AngleSimpleLinear(128, 2),
                                             )
-            else:
-                model.classifier[3] = nn.Linear(1280, 2)
-                model.classifier[2] == nn.Dropout(p=0.5)
+        else:
+            assert config['loss']['loss_type'] == 'cross_entropy'
+            model.classifier[3] = nn.Linear(1280, 2)
+            model.classifier[2] == nn.Dropout(p=0.5)
                 
 
     #criterion
@@ -100,27 +100,28 @@ def main():
 
         # remember best accuracy, AUC and EER and save checkpoint
         if accuracy > BEST_ACCURACY and args.save_checkpoint:
-            AUC, EER, accur, apcer, bpcer, acer = evaulate(model, val_loader, compute_accuracy=False, GPU=args.GPU)
+            AUC, EER, _ , apcer, bpcer, acer = evaulate(model, val_loader, compute_accuracy=False, GPU=args.GPU)
             print(f'epoch: {epoch}   AUC: {AUC}   EER: {EER}   APCER: {apcer}   BPCER: {bpcer}   ACER: {acer}')
             if EER < BEST_EER or AUC > BEST_AUC or acer < BEST_ACER:
                 checkpoint = {'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch':epoch}
                 save_checkpoint(checkpoint, f'{experiment_path}/{experiment_snapshot}')
                 BEST_ACCURACY = max(accuracy, BEST_ACCURACY)
-                print(f'epoch: {epoch}   AUC: {AUC}   EER: {EER}')
-            BEST_EER = min(EER, BEST_EER)
-            BEST_AUC = max(AUC, BEST_AUC)
-
+                BEST_EER = min(EER, BEST_EER)
+                BEST_ACER = min(acer, BEST_ACER)
+                BEST_AUC = max(AUC, BEST_AUC)
+                print(f'epoch: {epoch}   AUC: {AUC}   EER: {EER}   APCER: {apcer}   BPCER: {bpcer}   ACER: {acer}')
+            
         # evaluate on val every 30 epoch and save snapshot if better results achieved
         if (epoch%10 == 0 or epoch == config['epochs']['max_epoch']) and args.save_checkpoint:
             AUC, EER, accur, apcer, bpcer, acer = evaulate(model, val_loader, compute_accuracy=False, GPU=args.GPU)
             print(f'epoch: {epoch}   AUC: {AUC}   EER: {EER}   APCER: {apcer}   BPCER: {bpcer}   ACER: {acer}')
-            if EER < BEST_EER or AUC > BEST_AUC:
+            if EER < BEST_EER or AUC > BEST_AUC or acer < BEST_ACER:
                 checkpoint = {'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch':epoch}
                 save_checkpoint(checkpoint, f'{experiment_path}/{experiment_snapshot}')
-            BEST_EER = min(EER, BEST_EER)
-            BEST_AUC = max(AUC, BEST_AUC)
-
-        print(f'best val accuracy:  {BEST_ACCURACY}  best AUC: {BEST_AUC}  best EER: {BEST_EER}')
+                BEST_EER = min(EER, BEST_EER)
+                BEST_ACER = min(acer, BEST_ACER)
+                BEST_AUC = max(AUC, BEST_AUC)
+        print(f'best val accuracy:  {BEST_ACCURACY}  best AUC: {BEST_AUC}  best EER: {BEST_EER} best ACER: {BEST_ACER}')
 
 def train(train_loader, model, criterion, optimizer, epoch):
     global STEP, args, config

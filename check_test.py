@@ -5,6 +5,7 @@ from models.mobilenetv3 import h_swish
 from reader_dataset_tmp import LCFAD_test
 from datasets.lcc_fasd import LCFAD
 from datasets.casia_surf import CasiaSurfDataset
+from datasets import CelebASpoofDataset
 import albumentations as A
 import torch
 import numpy as np
@@ -20,6 +21,7 @@ from losses.am_softmax import AngleSimpleLinear
 import torch.nn as nn
 from sklearn import metrics
 from casia_eval import evaluate as casia_eval
+import tqdm
 
 def load_checkpoint(checkpoint, model):
     print("==> Loading checkpoint")
@@ -70,7 +72,7 @@ def evaulate(model, loader, compute_accuracy=True, GPU=2):
     AUC = auc(fpr, tpr)
     return AUC, EER, accur, apcer, bpcer, acer
 
-def plot_ROC_curve(fpr, tpr, name_fig='ROC curve 8'):
+def plot_ROC_curve(fpr, tpr, name_fig='ROC curve 21_2'):
     plt.figure()
     plt.xlim([-0.01, 1.00])
     plt.ylim([-0.01, 1.00])
@@ -83,7 +85,7 @@ def plot_ROC_curve(fpr, tpr, name_fig='ROC curve 8'):
     plt.axes().set_aspect('equal')
     plt.savefig(name_fig)
 
-def plot_curve_DET(fpr, fnr, EER, name_fig='DET curve 8'):
+def plot_curve_DET(fpr, fnr, EER, name_fig='DET curve 21_2'):
     plt.figure()
     plt.xlim([0.1, 60])
     plt.ylim([0.1, 60])
@@ -111,12 +113,12 @@ def DETCurve(fps,fns, EER):
     ax.set_xticks(ticks_to_use)
     ax.set_yticks(ticks_to_use)
     plt.axis([0.001,50,0.001,50])
-    fig.savefig('log_DET_8.png')
+    fig.savefig('log_DET_21_2.png')
 
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='antispoofing training')
-    parser.add_argument('--model_name', default='/home/prokofiev/pytorch/antispoofing/log_tensorboard/MobileNet_LCFAD_16/my_best_modelMobileNet_16.pth.tar', type=str)
+    parser.add_argument('--model_name', default='/home/prokofiev/pytorch/antispoofing/log_tensorboard/MobileNet_LCFAD_21_2/MobileNet3_21_2.pth.tar', type=str)
     parser.add_argument('--draw_graph', default=False, type=bool, help='whether or not to draw graphics')
     parser.add_argument('--model', type=str, default='mobilenet3', help='which model to use')
     parser.add_argument('--dataset', type=str, default='LCCFAD', help='concrete which dataset to use, options: LCCFAD, CASIA')
@@ -132,7 +134,7 @@ if __name__ == "__main__":
                                                 nn.BatchNorm1d(128),
                                                 h_swish(),
                                                 AngleSimpleLinear(128, 2),
-                                            )
+                                        )
         # model.classifier[3] = nn.Linear(1280,2)
         load_checkpoint(torch.load(args.model_name, map_location='cuda:2'), model)
     model.cuda(device=2)
@@ -144,13 +146,15 @@ if __name__ == "__main__":
 
     if args.dataset == 'LCCFAD':
         test_dataset = LCFAD_test(root_dir='/home/prokofiev/pytorch/LCC_FASD', transform=test_transform)
+    elif args.dataset == 'celeba-spoof':
+        test_dataset = CelebASpoofDataset(root_folder='/home/prokofiev/pytorch/antispoofing/CelebA_Spoof', test_mode=True, transform=test_transform)
     else:
         assert args.dataset == 'CASIA'
         test_dataset = CasiaSurfDataset(protocol=1, dir='/home/prokofiev/pytorch/antispoofing/CASIA', mode='dev', transform=test_transform)
     
     test_loader = DataLoader(dataset=test_dataset, batch_size=100, shuffle=True, num_workers=2)
     
-    AUC, EER, accur, apcer, bpcer, acer  = evaulate(model, test_loader)
+    AUC, EER, accur, apcer, bpcer, acer, tpr, fpr  = evaulate(model, test_loader)
 
     print(f'EER = {EER}')
     print(f'accuracy on test data = {np.mean(accur)}')

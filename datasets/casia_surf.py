@@ -62,7 +62,7 @@ class CasiaSurfDataset(Dataset):
             img = np.transpose(img, (2, 0, 1)).astype(np.float32)
             images += [torch.tensor(img)]
 
-        return torch.cat(images, dim=0), int(label)
+        return torch.cat(images, dim=0), 1-int(label)
 
     def get_all_modalities(self, img_path: str, depth: bool = True, ir: bool = True) -> list:
         result = [img_path]
