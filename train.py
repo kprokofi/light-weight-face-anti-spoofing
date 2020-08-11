@@ -5,14 +5,15 @@ import torch.optim as optim
 import torch.utils.data
 from torch.utils.tensorboard import SummaryWriter
 import torch.nn.functional as F
-from losses import AMSoftmaxLoss, AngleSimpleLinear
-from models import MobileNetV2, mobilenetv3_large
+from losses import AMSoftmaxLoss, AngleSimpleLinear, SoftTripleLoss, SoftTripleLinear
+from models import MobileNetV2, mobilenetv3_large, mobilenetv3_small
 from models.mobilenetv3 import h_swish
 import albumentations as A
 from tqdm import tqdm
-from utils import AverageMeter, read_py_config, save_checkpoint, precision, mixup_target, freeze_layers, make_dataset, make_loader
+from utils import AverageMeter, read_py_config, save_checkpoint, precision, mixup_target, freeze_layers, make_dataset, make_loader, change_model
 import os
 from check_test import evaulate
+import cv2
 
 parser = argparse.ArgumentParser(description='antispoofing training')
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -24,7 +25,7 @@ parser.add_argument('--save_checkpoint', type=bool, default=True, help='whether 
 parser.add_argument('--config', type=str, default='config.py', required=False,
                         help='Configuration file')
 
-#global variables and argument parsing
+# global variables and argument parsing
 args = parser.parse_args()
 path_to_config = os.path.join(current_dir, args.config)
 config = read_py_config(path_to_config)
@@ -39,7 +40,7 @@ def main():
     # loading data
     normalize = A.Normalize(**config['img_norm_cfg'])
     train_transform = A.Compose([
-                            A.Resize(**config['resize']),
+                            A.Resize(**config['resize'], interpolation=cv2.INTER_CUBIC),
                             A.HorizontalFlip(p=0.5),
                             A.Rotate(limit=(-30, 30), p=0.5),
                             A.augmentations.transforms.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, brightness_by_max=True, always_apply=False, p=0.5),
@@ -60,26 +61,26 @@ def main():
         model = MobileNetV2(use_amsoftmax=config['model']['use_amsoftmax'])
     else:
         assert config['model']['model_type'] == 'Mobilenet3'
-        model = mobilenetv3_large()
-        if config['model']['pretrained']:
-            model.load_state_dict(torch.load('pretrained/mobilenetv3-large-1cd25616.pth', map_location=f'cuda:{args.GPU}'), strict=False)
-        if config['loss']['loss_type'] == 'amsoftmax':
-            model.classifier = nn.Sequential(
-                                                nn.Linear(960, 128),
-                                                nn.Dropout(0.2),
-                                                nn.BatchNorm1d(128),
-                                                h_swish(),
-                                                AngleSimpleLinear(128, 2),
-                                            )
+        if config['model']['model_size'] == 'large':
+            model = mobilenetv3_large()
+            if config['model']['pretrained']:
+                model.load_state_dict(torch.load('pretrained/mobilenetv3-large-1cd25616.pth', 
+                                                map_location=f'cuda:{args.GPU}'), strict=False)
         else:
-            assert config['loss']['loss_type'] == 'cross_entropy'
-            model.classifier[1] == nn.Dropout(p=0.5)
-            model.classifier[4] = nn.Linear(1280, 2)
-                
+            assert config['model']['model_size'] == 'small'
+            model = mobilenetv3_small( width_mult=.75)
+            if config['model']['pretrained']:
+                model.load_state_dict(torch.load('pretrained/mobilenetv3-small-0.75-86c972c3.pth', 
+                                                map_location=f'cuda:{args.GPU}'), strict=False)
+        
+        # change classifier layer depending on the loss function
+        change_model(model, config)
 
     #criterion
     if config['loss']['loss_type'] == 'amsoftmax':
-        criterion = AMSoftmaxLoss(**config['amsoftmax'])
+        criterion = AMSoftmaxLoss(**config['loss']['amsoftmax'])
+    elif config['loss']['loss_type'] == 'soft_triple':
+        criterion = SoftTripleLoss(**config['loss']['soft_triple'])
     else:
         criterion = nn.CrossEntropyLoss()
 
@@ -102,7 +103,7 @@ def main():
         if accuracy > BEST_ACCURACY and args.save_checkpoint:
             AUC, EER, _ , apcer, bpcer, acer = evaulate(model, val_loader, compute_accuracy=False, GPU=args.GPU)
             print(f'epoch: {epoch}   AUC: {AUC}   EER: {EER}   APCER: {apcer}   BPCER: {bpcer}   ACER: {acer}')
-            if EER < BEST_EER or AUC > BEST_AUC or acer < BEST_ACER:
+            if EER < BEST_EER or acer < BEST_ACER:
                 checkpoint = {'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch':epoch}
                 save_checkpoint(checkpoint, f'{experiment_path}/{experiment_snapshot}')
                 BEST_ACCURACY = max(accuracy, BEST_ACCURACY)
@@ -111,11 +112,11 @@ def main():
                 BEST_AUC = max(AUC, BEST_AUC)
                 print(f'epoch: {epoch}   AUC: {AUC}   EER: {EER}   APCER: {apcer}   BPCER: {bpcer}   ACER: {acer}')
             
-        # evaluate on val every 30 epoch and save snapshot if better results achieved
+        # evaluate on val every 10 epoch and save snapshot if better results achieved
         if (epoch%10 == 0 or epoch == config['epochs']['max_epoch']) and args.save_checkpoint:
-            AUC, EER, accur, apcer, bpcer, acer = evaulate(model, val_loader, compute_accuracy=False, GPU=args.GPU)
+            AUC, EER, _ , apcer, bpcer, acer = evaulate(model, val_loader, compute_accuracy=False, GPU=args.GPU)
             print(f'epoch: {epoch}   AUC: {AUC}   EER: {EER}   APCER: {apcer}   BPCER: {bpcer}   ACER: {acer}')
-            if EER < BEST_EER or AUC > BEST_AUC or acer < BEST_ACER:
+            if EER < BEST_EER or acer < BEST_ACER:
                 checkpoint = {'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch':epoch}
                 save_checkpoint(checkpoint, f'{experiment_path}/{experiment_snapshot}')
                 BEST_EER = min(EER, BEST_EER)
@@ -142,21 +143,22 @@ def train(train_loader, model, criterion, optimizer, epoch):
         if config['data']['cuda']:
             input = input.cuda(device=args.GPU)
             target = target.cuda(device=args.GPU)
+        
         # compute output and loss
-
         if config['aug']['type_aug'] == 'mixup':
-            mixup_output = mixup_target(input, target, config['aug']['alpha'], args.GPU, criterion=config['loss']['loss_type'])
+            aug_output = mixup_target(input, target, config['aug']['alpha'], args.GPU, criterion=config['loss']['loss_type'])
+        if config['aug']['type_aug'] == 'cutmix':
+            aug_output = cutmix(input, output, target, config, args)
         if config['loss']['loss_type'] == 'amsoftmax':
             if config['aug']['type_aug'] != None:
-                input, targets = mixup_output
+                input, targets = aug_output
                 output = model(input)
                 loss = criterion(output, targets)
             else:
                 output = model(input)
                 new_target = F.one_hot(target, num_classes=2)
                 loss = criterion(output, new_target)
-        else:
-            assert config['loss']['loss_type'] == 'cross_entropy'
+        elif config['loss']['loss_type'] == 'cross_entropy':
             if config['aug']['type_aug'] != None:
                 input, y_a, y_b, lam = mixup_output
                 output = model(input)
@@ -164,7 +166,10 @@ def train(train_loader, model, criterion, optimizer, epoch):
             else:
                 output = model(input)
                 loss = criterion(output, target)
-
+        else:
+            assert config['loss']['loss_type'] == 'soft_triple':
+            output = model(input)
+            loss = criterion(output, target)
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
@@ -172,7 +177,7 @@ def train(train_loader, model, criterion, optimizer, epoch):
         optimizer.step()
 
         # measure accuracy and record loss
-        acc = precision(output.data, target, s=config['amsoftmax']['s'])
+        acc = precision(output, target, s=config['loss']['amsoftmax']['s'])
         losses.update(loss.item(), input.size(0))
         accuracy.update(acc, input.size(0))
 
@@ -210,28 +215,29 @@ def validate(val_loader, model, criterion):
                 new_target = F.one_hot(target, num_classes=2)
                 loss = criterion(output, new_target)
             else:
-                assert config['loss']['loss_type'] == 'cross_entropy'
+                assert config['loss']['loss_type'] in ('cross_entropy', 'soft_triple')
                 loss = criterion(output, target)
 
         # measure accuracy and record loss
-        acc = precision(output.data, target, s=config['amsoftmax']['s'])
+        acc = precision(output, target, s=config['loss']['amsoftmax']['s'])
         losses.update(loss.item(), input.size(0))
         accuracy.update(acc, input.size(0))
-
-        # write val in writer
-        WRITER.add_scalar('Val/loss', losses.avg, global_step=VAL_STEP)
-        WRITER.add_scalar('Val/accuracy',  accuracy.avg, global_step=VAL_STEP)
-        VAL_STEP += 1
 
         # update progress bar
         if i % args.print_freq == 0:
             loop.set_postfix(loss=loss.item(), avr_loss = losses.avg, acc=acc, avr_acc=accuracy.avg)
 
-    print(f'val accuracy on epoch: {round(accuracy.avg, 3)}')
+    print(f'val accuracy on epoch: {round(accuracy.avg, 3)}, loss on epoch:{round(losses.avg, 3)}')
+    # write val in writer
+    WRITER.add_scalar('Val/loss', losses.avg, global_step=VAL_STEP)
+    WRITER.add_scalar('Val/accuracy',  accuracy.avg, global_step=VAL_STEP)
+    VAL_STEP += 1
 
     return accuracy.avg
 
 def mixup_criterion(criterion, pred, y_a, y_b, lam):
+    if type(pred) == tuple:
+        pred = pred[0]
     return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
 
 if __name__=='__main__':

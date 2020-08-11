@@ -7,6 +7,8 @@ import numpy as np
 import torch.nn.functional as F
 from datasets import LCFAD, CelebASpoofDataset
 from torch.utils.data import DataLoader
+from losses import AngleSimpleLinear, SoftTripleLinear
+import torch.nn as nn
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""
@@ -62,6 +64,8 @@ def precision(output, target, s=None):
     """Computes the precision"""
     if s:
         output = output*s
+    if type(output) == tuple:
+        output = output[0].data
     accuracy = (output.argmax(dim=1) == target).float().mean().item()
     return accuracy*100
 
@@ -129,3 +133,61 @@ def make_loader(train, val, config):
                                                 shuffle=True, pin_memory=config['data']['pin_memory'],
                                                 num_workers=config['data']['data_loader_workers'])
     return train_loader, val_loader
+
+def change_model(model, config):
+    ''' change layers depends on loss type'''
+    if config['model']['model_size'] == 'small':
+        exp_size = 432
+    else:
+        assert config['model']['model_size'] == 'large'
+        exp_size = 960
+
+    if config['loss']['loss_type'] == 'amsoftmax':
+        model.classifier[0] = nn.Linear(exp_size, config['model']['embeding_dim'])
+        model.classifier[2] = nn.BatchNorm1d(config['model']['embeding_dim'])
+        model.classifier[4] = AngleSimpleLinear(config['model']['embeding_dim'], 2)
+        
+    elif config['loss']['loss_type'] == 'cross_entropy':
+        model.classifier[1] == nn.Dropout(p=0.5)
+        model.classifier[4] = nn.Linear(1280, 2)
+
+    else:
+        assert config['loss']['loss_type'] == 'soft_triple'
+        model.classifier[0] = nn.Linear(exp_size, config['model']['embeding_dim'])
+        model.classifier[2] = nn.BatchNorm1d(config['model']['embeding_dim'])
+        model.classifier[4] = SoftTripleLinear(config['model']['embeding_dim'], 2)
+
+def cutmix(input, output, target, config, args):
+    r = np.random.rand(1)
+    if config['aug']['beta'] > 0 and config['aug']['alpha'] > 0 and r < config['aug']['cutmix_prob']:
+        # generate mixed sample
+        lam = np.random.beta(config['aug']['alpha'] > 0, config['aug']['beta'] > 0)
+        rand_index = torch.randperm(input.size()[0]).cuda(device=args.GPU)
+        # get one hot target vectors 
+        target_a2 = F.one_hot(target) 
+        target_b2 = F.one_hot(target)[rand_index]
+        bbx1, bby1, bbx2, bby2 = rand_bbox(input.size(), lam)
+        input[:, :, bbx1:bbx2, bby1:bby2] = input[rand_index, :, bbx1:bbx2, bby1:bby2]
+        # adjust lambda to exactly match pixel ratio
+        lam = 1 - ((bbx2 - bbx1) * (bby2 - bby1) / (input.size()[-1] * input.size()[-2]))
+        # do merging classes (cutmix)
+        new_target = lam*target_a2 + (1.0 - lam)*target_b2
+        return input, new_target
+
+def rand_bbox(size, lam):
+    W = size[2]
+    H = size[3]
+    cut_rat = np.sqrt(1. - lam)
+    cut_w = np.int(W * cut_rat)
+    cut_h = np.int(H * cut_rat)
+
+    # uniform
+    cx = np.random.randint(W)
+    cy = np.random.randint(H)
+
+    bbx1 = np.clip(cx - cut_w // 2, 0, W)
+    bby1 = np.clip(cy - cut_h // 2, 0, H)
+    bbx2 = np.clip(cx + cut_w // 2, 0, W)
+    bby2 = np.clip(cy + cut_h // 2, 0, H)
+
+    return bbx1, bby1, bbx2, bby2
