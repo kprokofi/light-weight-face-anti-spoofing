@@ -41,6 +41,8 @@ def evaulate(model, loader, compute_accuracy=True, GPU=2):
         # target = 1 - target
         with torch.no_grad():
             output = model(input)
+            if type(output)==tuple:
+                output = output[0]
             y_true = target.detach().cpu().numpy()
             y_pred = output.argmax(dim=1).detach().cpu().numpy()
             tn_batch, fp_batch, fn_batch, tp_batch = metrics.confusion_matrix(y_true=y_true, 
@@ -54,7 +56,7 @@ def evaulate(model, loader, compute_accuracy=True, GPU=2):
 
             if compute_accuracy:
                 accur.append((y_pred == y_true).mean())
-            positive_probabilities = F.softmax(output, dim=-1)[:,1].cpu().numpy()
+            positive_probabilities = F.softmax(output*5, dim=-1)[:,1].cpu().numpy()
         proba_accum = np.concatenate((proba_accum, positive_probabilities))
         target_accum = np.concatenate((target_accum, y_true))
 
@@ -119,7 +121,7 @@ def DETCurve(fps,fns, EER):
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='antispoofing training')
-    parser.add_argument('--model_name', default='/home/prokofiev/pytorch/antispoofing/log_tensorboard/MobileNet_Celeba_23/MobileNet3_23.pth.tar', type=str)
+    parser.add_argument('--model_name', default='/home/prokofiev/pytorch/antispoofing/log_tensorboard/MobileNet_Celeba_24/MobileNet3_24.pth.tar', type=str)
     parser.add_argument('--draw_graph', default=False, type=bool, help='whether or not to draw graphics')
     parser.add_argument('--model', type=str, default='mobilenet3', help='which model to use')
     parser.add_argument('--dataset', type=str, default='LCCFAD', help='concrete which dataset to use, options: LCCFAD, CASIA')
