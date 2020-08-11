@@ -10,7 +10,7 @@ from models import MobileNetV2, mobilenetv3_large, mobilenetv3_small
 from models.mobilenetv3 import h_swish
 import albumentations as A
 from tqdm import tqdm
-from utils import AverageMeter, read_py_config, save_checkpoint, precision, mixup_target, freeze_layers, make_dataset, make_loader, change_model
+from utils import AverageMeter, read_py_config, save_checkpoint, precision, mixup_target, cutmix, freeze_layers, make_dataset, make_loader, change_model
 import os
 from check_test import evaulate
 import cv2
@@ -146,13 +146,14 @@ def train(train_loader, model, criterion, optimizer, epoch):
         
         # compute output and loss
         if config['aug']['type_aug'] == 'mixup':
+            output = model(input)
             aug_output = mixup_target(input, target, config['aug']['alpha'], args.GPU, criterion=config['loss']['loss_type'])
         if config['aug']['type_aug'] == 'cutmix':
+            output = model(input)
             aug_output = cutmix(input, output, target, config, args)
         if config['loss']['loss_type'] == 'amsoftmax':
             if config['aug']['type_aug'] != None:
                 input, targets = aug_output
-                output = model(input)
                 loss = criterion(output, targets)
             else:
                 output = model(input)
@@ -160,14 +161,14 @@ def train(train_loader, model, criterion, optimizer, epoch):
                 loss = criterion(output, new_target)
         elif config['loss']['loss_type'] == 'cross_entropy':
             if config['aug']['type_aug'] != None:
-                input, y_a, y_b, lam = mixup_output
+                input, y_a, y_b, lam = aug_output
                 output = model(input)
                 loss = mixup_criterion(criterion, output, y_a, y_b, lam)
             else:
                 output = model(input)
                 loss = criterion(output, target)
         else:
-            assert config['loss']['loss_type'] == 'soft_triple':
+            assert config['loss']['loss_type'] == 'soft_triple'
             output = model(input)
             loss = criterion(output, target)
 
@@ -182,9 +183,10 @@ def train(train_loader, model, criterion, optimizer, epoch):
         accuracy.update(acc, input.size(0))
 
         # write to writer for tensorboard
-        WRITER.add_scalar('Train/loss', losses.avg, global_step=STEP)
-        WRITER.add_scalar('Train/accuracy',  accuracy.avg, global_step=STEP)
-        STEP += 1
+        if i % args.print_freq == 0:
+            WRITER.add_scalar('Train/loss', loss, global_step=STEP)
+            WRITER.add_scalar('Train/accuracy',  acc, global_step=STEP)
+            STEP += 1
 
         # update progress bar
         max_epochs = config['epochs']['max_epoch']

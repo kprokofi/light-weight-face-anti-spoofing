@@ -155,11 +155,11 @@ def change_model(model, config):
         assert config['loss']['loss_type'] == 'soft_triple'
         model.classifier[0] = nn.Linear(exp_size, config['model']['embeding_dim'])
         model.classifier[2] = nn.BatchNorm1d(config['model']['embeding_dim'])
-        model.classifier[4] = SoftTripleLinear(config['model']['embeding_dim'], 2)
+        model.classifier[4] = SoftTripleLinear(config['model']['embeding_dim'], 2, num_proxies=10)
 
 def cutmix(input, output, target, config, args):
     r = np.random.rand(1)
-    if config['aug']['beta'] > 0 and config['aug']['alpha'] > 0 and r < config['aug']['cutmix_prob']:
+    if (config['aug']['beta'] > 0) and (config['aug']['alpha'] > 0) and (r < config['aug']['cutmix_prob']):
         # generate mixed sample
         lam = np.random.beta(config['aug']['alpha'] > 0, config['aug']['beta'] > 0)
         rand_index = torch.randperm(input.size()[0]).cuda(device=args.GPU)
@@ -173,6 +173,8 @@ def cutmix(input, output, target, config, args):
         # do merging classes (cutmix)
         new_target = lam*target_a2 + (1.0 - lam)*target_b2
         return input, new_target
+    target = F.one_hot(target, num_classes=2)
+    return input, target
 
 def rand_bbox(size, lam):
     W = size[2]
