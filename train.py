@@ -146,14 +146,13 @@ def train(train_loader, model, criterion, optimizer, epoch):
         
         # compute output and loss
         if config['aug']['type_aug'] == 'mixup':
-            output = model(input)
             aug_output = mixup_target(input, target, config['aug']['alpha'], args.GPU, criterion=config['loss']['loss_type'])
         if config['aug']['type_aug'] == 'cutmix':
-            output = model(input)
-            aug_output = cutmix(input, output, target, config, args)
+            aug_output = cutmix(input, target, config, args)
         if config['loss']['loss_type'] == 'amsoftmax':
             if config['aug']['type_aug'] != None:
                 input, targets = aug_output
+                output = model(input)
                 loss = criterion(output, targets)
             else:
                 output = model(input)

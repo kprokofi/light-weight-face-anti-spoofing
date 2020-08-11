@@ -157,7 +157,7 @@ def change_model(model, config):
         model.classifier[2] = nn.BatchNorm1d(config['model']['embeding_dim'])
         model.classifier[4] = SoftTripleLinear(config['model']['embeding_dim'], 2, num_proxies=10)
 
-def cutmix(input, output, target, config, args):
+def cutmix(input, target, config, args):
     r = np.random.rand(1)
     if (config['aug']['beta'] > 0) and (config['aug']['alpha'] > 0) and (r < config['aug']['cutmix_prob']):
         # generate mixed sample
