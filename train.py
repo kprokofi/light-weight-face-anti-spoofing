@@ -6,13 +6,11 @@ import torch.utils.data
 from torch.utils.tensorboard import SummaryWriter
 import torch.nn.functional as F
 from losses import AMSoftmaxLoss, AngleSimpleLinear, SoftTripleLoss, SoftTripleLinear
-from models import MobileNetV2, mobilenetv3_large, mobilenetv3_small
-from models.mobilenetv3 import h_swish
 import albumentations as A
 from tqdm import tqdm
-from utils import AverageMeter, read_py_config, save_checkpoint, precision, mixup_target, cutmix, freeze_layers, make_dataset, make_loader, change_model
+from utils import *
 import os
-from check_test import evaulate
+from eval_protocol import evaulate
 import cv2
 
 parser = argparse.ArgumentParser(description='antispoofing training')
@@ -22,7 +20,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 parser.add_argument('--GPU', type=int, default=1, help='specify which gpu to use')
 parser.add_argument('--print-freq', '-p', default=5, type=int, help='print frequency (default: 20)')
 parser.add_argument('--save_checkpoint', type=bool, default=True, help='whether or not to save your model')
-parser.add_argument('--config', type=str, default='config.py', required=False,
+parser.add_argument('--config', type=str, default='config.py', required=True,
                         help='Configuration file')
 
 # global variables and argument parsing
@@ -37,7 +35,7 @@ BEST_ACCURACY, BEST_AUC, BEST_EER, BEST_ACER = 0, 0, float('inf'), float('inf')
 def main():
     global args, BEST_ACCURACY, BEST_EER, BEST_AUC, BEST_ACER, config
 
-    # loading data
+    # preprocessing data
     normalize = A.Normalize(**config['img_norm_cfg'])
     train_transform = A.Compose([
                             A.Resize(**config['resize'], interpolation=cv2.INTER_CUBIC),
@@ -56,25 +54,8 @@ def main():
     train_dataset, val_dataset = make_dataset(config, train_transform, val_transform)
     train_loader, val_loader = make_loader(train_dataset, val_dataset, config)
 
-    # model
-    if config['model']['model_type'] == 'Mobilenet2':
-        model = MobileNetV2(use_amsoftmax=config['model']['use_amsoftmax'])
-    else:
-        assert config['model']['model_type'] == 'Mobilenet3'
-        if config['model']['model_size'] == 'large':
-            model = mobilenetv3_large()
-            if config['model']['pretrained']:
-                model.load_state_dict(torch.load('pretrained/mobilenetv3-large-1cd25616.pth', 
-                                                map_location=f'cuda:{args.GPU}'), strict=False)
-        else:
-            assert config['model']['model_size'] == 'small'
-            model = mobilenetv3_small( width_mult=.75)
-            if config['model']['pretrained']:
-                model.load_state_dict(torch.load('pretrained/mobilenetv3-small-0.75-86c972c3.pth', 
-                                                map_location=f'cuda:{args.GPU}'), strict=False)
-        
-        # change classifier layer depending on the loss function
-        change_model(model, config)
+    # build model
+    model = build_model(config, args, strict=True)
 
     #criterion
     if config['loss']['loss_type'] == 'amsoftmax':
@@ -101,7 +82,7 @@ def main():
 
         # remember best accuracy, AUC and EER and save checkpoint
         if accuracy > BEST_ACCURACY and args.save_checkpoint:
-            AUC, EER, _ , apcer, bpcer, acer = evaulate(model, val_loader, compute_accuracy=False, GPU=args.GPU)
+            AUC, EER, _ , apcer, bpcer, acer = evaulate(model, val_loader, config, args, compute_accuracy=False)
             print(f'epoch: {epoch}   AUC: {AUC}   EER: {EER}   APCER: {apcer}   BPCER: {bpcer}   ACER: {acer}')
             if EER < BEST_EER or acer < BEST_ACER:
                 checkpoint = {'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch':epoch}
@@ -114,7 +95,7 @@ def main():
             
         # evaluate on val every 10 epoch and save snapshot if better results achieved
         if (epoch%10 == 0 or epoch == config['epochs']['max_epoch']) and args.save_checkpoint:
-            AUC, EER, _ , apcer, bpcer, acer = evaulate(model, val_loader, compute_accuracy=False, GPU=args.GPU)
+            AUC, EER, _ , apcer, bpcer, acer = evaulate(model, val_loader, config, args, compute_accuracy=False)
             print(f'epoch: {epoch}   AUC: {AUC}   EER: {EER}   APCER: {apcer}   BPCER: {bpcer}   ACER: {acer}')
             if EER < BEST_EER or acer < BEST_ACER:
                 checkpoint = {'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch':epoch}

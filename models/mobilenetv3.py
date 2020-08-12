@@ -146,6 +146,7 @@ class MobileNetV3(nn.Module):
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         output_channel = {'large': 1280, 'small': 1024}
         output_channel = _make_divisible(output_channel[mode] * width_mult, 8) if width_mult > 1.0 else output_channel[mode]
+        print(exp_size)
         self.classifier = nn.Sequential(
             nn.Linear(exp_size, output_channel),
             nn.Dropout(0.2),
@@ -228,7 +229,7 @@ def mobilenetv3_small(**kwargs):
 
 def test():
     net = mobilenetv3_large()
-    x = torch.randn(10,3,224,224)
+    x = torch.randn(10,3,128,128)
     y = net(x)
     print(y.shape)
 

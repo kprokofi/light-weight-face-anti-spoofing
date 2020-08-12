@@ -13,6 +13,9 @@ def create_json(mode='train', root_folder='/home/prokofiev/pytorch/antispoofing/
         save_file = os.path.join(root_folder, 'metas/intra_test/items_train.json')
     indx=0
     items = {}
+    with open('small_crops.txt', 'r') as f:
+        small_crops = map(lambda x: x.strip(), f.readlines())
+        set_ = set(small_crops)
     with open(list_path, 'r') as f:
         data = json.load(f)
         for path in tqdm(data, 'Reading dataset info...', leave=False):
@@ -24,6 +27,8 @@ def create_json(mode='train', root_folder='/home/prokofiev/pytorch/antispoofing/
             if len(bbox) < 4 or bbox[2] < 3 or bbox[3] < 3: # filter not existing or too small boxes
                 print('Bad bounding box: ', bbox, path)
                 continue
+            if path in set_:
+                print('Bad cropp: ', path)
             items[indx] = {'path':path, 'labels':labels, 'bbox':bbox}
             indx += 1
     with open(save_file, 'w') as f:
