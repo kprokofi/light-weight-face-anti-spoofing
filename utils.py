@@ -112,7 +112,7 @@ def freeze_layers(model, open_layers):
 
 def make_dataset(config: dict, train_transform: object = None, val_transform: object = None, mode='train'):
     ''' make train and val datasets ''' 
-    if config['dataset'] == 'LCFAD':
+    if config['dataset'] == 'LCCFASD':
         train =  LCFAD(root_dir=config['data']['data_root'], train=True, transform=train_transform)
         val = LCFAD(root_dir=config['data']['data_root'], train=False, transform=val_transform)
         test = val
@@ -148,26 +148,27 @@ def build_model(config, args, strict=True):
     if config['model']['model_type'] == 'Mobilenet2':
         model = mobilenetv2()
         if config['model']['pretrained']:
-            model.load_state_dict(torch.load('pretrained/mobilenetv2_1.0-0c6065bc.pth', 
+            model.load_state_dict(torch.load('pretrained/mobilenetv2_128x128-fd66a69d.pth', 
                                                 map_location=f'cuda:{args.GPU}'), strict=strict)
         
         if config['loss']['loss_type'] == 'amsoftmax':
-            model.classifier = nn.Sequential(
-                    nn.Linear(320, config['model']['embeding_dim']),
-                    nn.Dropout(0.5),
-                    nn.BatchNorm1d(config['model']['embeding_dim']),
-                    nn.PReLU(),
-                    AngleSimpleLinear(config['model']['embeding_dim'], 2),
+            model.conv = nn.Sequential(
+                        nn.Conv2d(320, config['model']['embeding_dim'], 1, 1, 0, bias=False),
+                        nn.Dropout(0.5),
+                        nn.BatchNorm2d(config['model']['embeding_dim']),
+                        nn.PReLU()
                     )
+            model.classifier = AngleSimpleLinear(config['model']['embeding_dim'], 2)
+
 
         elif config['loss']['loss_type'] == 'soft_triple':
-            model.classifier = nn.Sequential(
-                    nn.Linear(320, config['model']['embeding_dim']),
-                    nn.Dropout(0.5),
-                    nn.BatchNorm1d(config['model']['embeding_dim']),
-                    nn.PReLU(),
-                    SoftTripleLinear(config['model']['embeding_dim'], 2, num_proxies=config['loss']['soft_triple']['K']),
-                     )
+            model.conv = nn.Sequential(
+                        nn.Conv2d(320, config['model']['embeding_dim'], 1, 1, 0, bias=False),
+                        nn.Dropout(0.5),
+                        nn.BatchNorm2d(config['model']['embeding_dim']),
+                        nn.PReLU()
+                    )
+            model.classifier = SoftTripleLinear(config['model']['embeding_dim'], 2, num_proxies=config['loss']['soft_triple']['K'])
     else:
         assert config['model']['model_type'] == 'Mobilenet3'
         if config['model']['model_size'] == 'large':

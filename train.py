@@ -40,8 +40,10 @@ def main():
     train_transform = A.Compose([
                             A.Resize(**config['resize'], interpolation=cv2.INTER_CUBIC),
                             A.HorizontalFlip(p=0.5),
-                            A.Rotate(limit=(-30, 30), p=0.5),
+                            A.augmentations.transforms.Blur(blur_limit=3, p=0.2),
                             A.augmentations.transforms.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, brightness_by_max=True, always_apply=False, p=0.5),
+                            A.augmentations.transforms.MotionBlur(blur_limit=4, p=0.2),
+                            A.augmentations.transforms.ISONoise(color_shift=(0.15,0.35), intensity=(0.2, 0.5)),
                             normalize,
                             ])
 
@@ -55,7 +57,7 @@ def main():
     train_loader, val_loader = make_loader(train_dataset, val_dataset, config)
 
     # build model
-    model = build_model(config, args, strict=True)
+    model = build_model(config, args, strict=False)
 
     #criterion
     if config['loss']['loss_type'] == 'amsoftmax':
@@ -84,26 +86,26 @@ def main():
         if accuracy > BEST_ACCURACY and args.save_checkpoint:
             AUC, EER, _ , apcer, bpcer, acer = evaulate(model, val_loader, config, args, compute_accuracy=False)
             print(f'epoch: {epoch}   AUC: {AUC}   EER: {EER}   APCER: {apcer}   BPCER: {bpcer}   ACER: {acer}')
-            if EER < BEST_EER or acer < BEST_ACER:
+            if acer < BEST_ACER:
+                BEST_ACER = acer
                 checkpoint = {'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch':epoch}
                 save_checkpoint(checkpoint, f'{experiment_path}/{experiment_snapshot}')
                 BEST_ACCURACY = max(accuracy, BEST_ACCURACY)
-                BEST_EER = min(EER, BEST_EER)
-                BEST_ACER = min(acer, BEST_ACER)
-                BEST_AUC = max(AUC, BEST_AUC)
-                print(f'epoch: {epoch}   AUC: {AUC}   EER: {EER}   APCER: {apcer}   BPCER: {bpcer}   ACER: {acer}')
+                BEST_EER = EER
+                BEST_AUC = AUC
+                
             
         # evaluate on val every 10 epoch and save snapshot if better results achieved
-        if (epoch%10 == 0 or epoch == config['epochs']['max_epoch']) and args.save_checkpoint:
+        if ((epoch%10 == 0) or (epoch == config['epochs']['max_epoch']-1)) and args.save_checkpoint:
             AUC, EER, _ , apcer, bpcer, acer = evaulate(model, val_loader, config, args, compute_accuracy=False)
             print(f'epoch: {epoch}   AUC: {AUC}   EER: {EER}   APCER: {apcer}   BPCER: {bpcer}   ACER: {acer}')
-            if EER < BEST_EER or acer < BEST_ACER:
+            if acer < BEST_ACER:
+                BEST_ACER = acer
                 checkpoint = {'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch':epoch}
                 save_checkpoint(checkpoint, f'{experiment_path}/{experiment_snapshot}')
-                BEST_EER = min(EER, BEST_EER)
-                BEST_ACER = min(acer, BEST_ACER)
-                BEST_AUC = max(AUC, BEST_AUC)
-        print(f'best val accuracy:  {BEST_ACCURACY}  best AUC: {BEST_AUC}  best EER: {BEST_EER} best ACER: {BEST_ACER}')
+                BEST_EER = EER
+                BEST_AUC = AUC
+        print(f'current val accuracy:  {BEST_ACCURACY}  current AUC: {BEST_AUC}  current EER: {BEST_EER} best ACER: {BEST_ACER}')
 
 def train(train_loader, model, criterion, optimizer, epoch):
     global STEP, args, config
@@ -163,16 +165,14 @@ def train(train_loader, model, criterion, optimizer, epoch):
         accuracy.update(acc, input.size(0))
 
         # write to writer for tensorboard
-        if i % args.print_freq == 0:
-            WRITER.add_scalar('Train/loss', loss, global_step=STEP)
-            WRITER.add_scalar('Train/accuracy',  acc, global_step=STEP)
-            STEP += 1
+        WRITER.add_scalar('Train/loss', loss, global_step=STEP)
+        WRITER.add_scalar('Train/accuracy',  accuracy.avg, global_step=STEP)
+        STEP += 1
 
         # update progress bar
         max_epochs = config['epochs']['max_epoch']
         loop.set_description(f'Epoch [{epoch}/{max_epochs}]')
-        if i % args.print_freq == 0:
-            loop.set_postfix(loss=loss.item(), avr_loss = losses.avg, acc=acc, avr_acc=accuracy.avg, lr=optimizer.param_groups[0]['lr'])
+        loop.set_postfix(loss=loss.item(), avr_loss = losses.avg, acc=acc, avr_acc=accuracy.avg, lr=optimizer.param_groups[0]['lr'])
     return losses.avg, accuracy.avg
 
 def validate(val_loader, model, criterion):
@@ -206,8 +206,7 @@ def validate(val_loader, model, criterion):
         accuracy.update(acc, input.size(0))
 
         # update progress bar
-        if i % args.print_freq == 0:
-            loop.set_postfix(loss=loss.item(), avr_loss = losses.avg, acc=acc, avr_acc=accuracy.avg)
+        loop.set_postfix(loss=loss.item(), avr_loss = losses.avg, acc=acc, avr_acc=accuracy.avg)
 
     print(f'val accuracy on epoch: {round(accuracy.avg, 3)}, loss on epoch:{round(losses.avg, 3)}')
     # write val in writer

@@ -22,3 +22,5 @@ epochs = dict(start_epoch=0, max_epoch=51)
 model= dict(model_type='Mobilenet3', model_size = 'small', use_amsoftmax=True, pretrained=True, embeding_dim=128)
 
 aug = dict(type_aug=None, alpha=0.5, beta=0.5, cutmix_prob=0.5)
+
+curves = dict(det_curve='det_curve_1.png', roc_curve='roc_curve_1.png')

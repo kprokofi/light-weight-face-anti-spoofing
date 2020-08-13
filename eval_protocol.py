@@ -32,12 +32,6 @@ def evaulate(model, loader, config, args, compute_accuracy=True):
             output = model(input)
             if type(output)==tuple:
                 output = output[0]
-                if config['loss']['loss_type'] == 'amsoftmax':
-                    output *= config['loss']['amsoftmax']['m']
-                else:
-                    assert config['loss']['loss_type'] == 'soft_triple'
-                    output *= config['loss']['soft_triple']['m']
-
             y_true = target.detach().cpu().numpy()
             y_pred = output.argmax(dim=1).detach().cpu().numpy()
             tn_batch, fp_batch, fn_batch, tp_batch = metrics.confusion_matrix(y_true=y_true, 
@@ -51,6 +45,11 @@ def evaulate(model, loader, config, args, compute_accuracy=True):
 
             if compute_accuracy:
                 accur.append((y_pred == y_true).mean())
+            if config['loss']['loss_type'] == 'amsoftmax':
+                output *= config['loss']['amsoftmax']['s']
+            else:
+                assert config['loss']['loss_type'] == 'soft_triple'
+                output *= config['loss']['soft_triple']['s']
             positive_probabilities = F.softmax(output, dim=-1)[:,1].cpu().numpy()
         proba_accum = np.concatenate((proba_accum, positive_probabilities))
         target_accum = np.concatenate((target_accum, y_true))
@@ -106,20 +105,21 @@ def DETCurve(fps,fns, EER, config):
 def main():
     current_dir = os.path.dirname(os.path.abspath(__file__))
     parser = argparse.ArgumentParser(description='antispoofing training')
-    parser.add_argument('--model_name', default='/home/prokofiev/pytorch/antispoofing/log_tensorboard/MobileNet_Celeba_22_1/MobileNet3_22_1.pth.tar', type=str)
     parser.add_argument('--draw_graph', default=False, type=bool, help='whether or not to draw graphics')
     parser.add_argument('--GPU', default=2, type=int, help='whether or not to draw graphics')
-    parser.add_argument('--dataset', type=str, default='LCCFAD', help='concrete which dataset to use, options: LCCFAD, CASIA')
     parser.add_argument('--config', type=str, default='config.py', required=True,
                         help='Configuration file')
     args = parser.parse_args()
 
     path_to_config = os.path.join(current_dir, args.config)
     config = read_py_config(path_to_config)
-    model = build_model(config, args, strict=False)
+    model = build_model(config, args, strict=True)
     model.cuda(device=args.GPU)
     # load snapshot
-    load_checkpoint(torch.load(args.model_name), model, optimizer=None)
+    path_to_experiment = os.path.join(config['checkpoint']['experiment_path'], config['checkpoint']['snapshot_name'])
+    checkpoint = torch.load(path_to_experiment, map_location=torch.device(f'cuda:{args.GPU}')) 
+    load_checkpoint(checkpoint, model, optimizer=None)
+    epoch_of_checkpoint = checkpoint['epoch']
     # preprocessing
     normalize = A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     test_transform = A.Compose([
@@ -132,12 +132,13 @@ def main():
     # computing metrics
     AUC, EER, accur, apcer, bpcer, acer, fpr, tpr  = evaulate(model, test_loader, config, args, compute_accuracy=True)
 
-    print(f'EER = {EER}')
-    print(f'accuracy on test data = {np.mean(accur)}')
-    print(f'AUC = {AUC}')
-    print(f'apcer = {apcer}')
-    print(f'bpcer = {bpcer}')
-    print(f'acer = {acer}')
+    print(f'EER = {round(EER*100,2)}')
+    print(f'accuracy on test data = {round(np.mean(accur),3)}')
+    print(f'AUC = {round(AUC,3)}')
+    print(f'apcer = {round(apcer*100,2)}')
+    print(f'bpcer = {round(bpcer*100,2)}')
+    print(f'acer = {round(acer*100,2)}')
+    print(f'checkpoint made on {epoch_of_checkpoint} epoch')
 
     if args.draw_graph:
         fnr = 1 - tpr

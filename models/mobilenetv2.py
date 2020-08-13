@@ -8,6 +8,7 @@ import from https://github.com/tonylins/pytorch-mobilenet-v2
 
 import torch.nn as nn
 import math
+import torch.nn.functional as F
 
 __all__ = ['mobilenetv2']
 
@@ -83,9 +84,9 @@ class InvertedResidual(nn.Module):
 
     def forward(self, x):
         if self.identity:
-            return x + self.conv(x)
+            return x + F.dropout2d(self.conv(x), p=0.2)
         else:
-            return self.conv(x)
+            return F.dropout2d(self.conv(x), p=0.2)
 
 
 class MobileNetV2(nn.Module):
@@ -116,7 +117,7 @@ class MobileNetV2(nn.Module):
         self.features = nn.Sequential(*layers)
         # building last several layers
         output_channel = _make_divisible(1280 * width_mult, 4 if width_mult == 0.1 else 8) if width_mult > 1.0 else 1280
-        print(input_channel)
+        print(output_channel)
         self.conv = conv_1x1_bn(input_channel, output_channel)
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.classifier = nn.Linear(output_channel, num_classes)

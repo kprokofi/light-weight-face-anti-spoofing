@@ -17,7 +17,7 @@ class AngleSimpleLinear(nn.Module):
 
     def forward(self, x):
         cos_theta = F.normalize(x, dim=1).mm(F.normalize(self.weight, dim=0))
-        return cos_theta.clamp(-1.0 + 1e-7, 1.0 - 1e-7)
+        return (cos_theta.clamp(-1.0 + 1e-7, 1.0 - 1e-7), )
 
 
 def focal_loss(input_values, gamma):
@@ -28,7 +28,7 @@ def focal_loss(input_values, gamma):
 
 def label_smoothing(classes, y_hot, smoothing=0.1, dim=-1):
     lam = 1 - smoothing
-    new_y = lam*y_hot + smoothing/(classes-1)
+    new_y = torch.where(y_hot.bool(), lam, smoothing/(classes-1))
     return new_y
 
 class AMSoftmaxLoss(nn.Module):
@@ -59,6 +59,7 @@ class AMSoftmaxLoss(nn.Module):
 
     def forward(self, cos_theta, target):
         ''' target - one hot vector '''
+        cos_theta = cos_theta[0]
         self.classes = target.size(1)
         if self.label_smooth:
             target = label_smoothing(classes=self.classes, y_hot=target, smoothing=self.smoothing)

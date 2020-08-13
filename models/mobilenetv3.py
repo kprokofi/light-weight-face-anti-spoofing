@@ -7,6 +7,7 @@ arXiv preprint arXiv:1905.02244.
 
 import torch.nn as nn
 import math
+import torch.nn.functional as F
 
 def _make_divisible(v, divisor, min_value=None):
     """
@@ -118,9 +119,9 @@ class InvertedResidual(nn.Module):
 
     def forward(self, x):
         if self.identity:
-            return x + self.conv(x)
+            return x + F.dropout2d(self.conv(x), p=0.2)
         else:
-            return self.conv(x)
+            return F.dropout2d(self.conv(x), p=0.2)
 
 
 class MobileNetV3(nn.Module):
@@ -149,7 +150,7 @@ class MobileNetV3(nn.Module):
         print(exp_size)
         self.classifier = nn.Sequential(
             nn.Linear(exp_size, output_channel),
-            nn.Dropout(0.2),
+            nn.Dropout(0.5),
             nn.BatchNorm1d(output_channel),
             h_swish(),
             nn.Linear(output_channel, num_classes),
