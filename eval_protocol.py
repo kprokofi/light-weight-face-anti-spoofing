@@ -8,7 +8,7 @@ import torch
 import numpy as np
 import argparse
 import os
-from utils import make_loader, make_dataset, load_checkpoint, build_model, read_py_config
+from utils import make_loader, make_dataset, load_checkpoint, build_model, read_py_config, Transform
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
@@ -16,6 +16,7 @@ import matplotlib
 import torch.nn as nn
 from sklearn import metrics
 from tqdm import tqdm
+import cv2
 
 def evaulate(model, loader, config, args, compute_accuracy=True):
     ''' evaulating AUC, EER, ACER, BPCER, APCER on given data loader and model '''
@@ -47,8 +48,7 @@ def evaulate(model, loader, config, args, compute_accuracy=True):
                 accur.append((y_pred == y_true).mean())
             if config['loss']['loss_type'] == 'amsoftmax':
                 output *= config['loss']['amsoftmax']['s']
-            else:
-                assert config['loss']['loss_type'] == 'soft_triple'
+            if config['loss']['loss_type'] == 'soft_triple':
                 output *= config['loss']['soft_triple']['s']
             positive_probabilities = F.softmax(output, dim=-1)[:,1].cpu().numpy()
         proba_accum = np.concatenate((proba_accum, positive_probabilities))
@@ -123,10 +123,11 @@ def main():
     # preprocessing
     normalize = A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     test_transform = A.Compose([
-                A.Resize(224, 224),
+                A.Resize(**config['resize'], interpolation=cv2.INTER_CUBIC),
                 normalize,
                 ])  
     # making dataset and loader
+    test_transform = Transform(val=test_transform)
     test_dataset = make_dataset(config, val_transform=test_transform, mode='eval')
     test_loader = DataLoader(dataset=test_dataset, batch_size=100, shuffle=True, num_workers=2)
     # computing metrics

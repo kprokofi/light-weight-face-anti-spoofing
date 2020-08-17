@@ -82,12 +82,11 @@ def conv_1x1_bn(inp, oup):
 
 
 class InvertedResidual(nn.Module):
-    def __init__(self, inp, hidden_dim, oup, kernel_size, stride, use_se, use_hs):
+    def __init__(self, inp, hidden_dim, oup, kernel_size, stride, use_se, use_hs, prob_dropout):
         super(InvertedResidual, self).__init__()
         assert stride in [1, 2]
-
         self.identity = stride == 1 and inp == oup
-
+        self.dropout2d = nn.Dropout2d(p=prob_dropout)
         if inp == hidden_dim:
             self.conv = nn.Sequential(
                 # dw
@@ -119,16 +118,17 @@ class InvertedResidual(nn.Module):
 
     def forward(self, x):
         if self.identity:
-            return x + F.dropout2d(self.conv(x), p=0.2)
+            return x + self.dropout2d(self.conv(x))
         else:
-            return F.dropout2d(self.conv(x), p=0.2)
+            return self.dropout2d(self.conv(x))
 
 
 class MobileNetV3(nn.Module):
-    def __init__(self, cfgs, mode, num_classes=1000, width_mult=1.):
+    def __init__(self, cfgs, mode, prob_dropout, num_classes=1000, width_mult=1.):
         super(MobileNetV3, self).__init__()
         # setting of inverted residual blocks
         self.cfgs = cfgs
+        self.prob_dropout = prob_dropout
         assert mode in ['large', 'small']
 
         # building first layer
@@ -139,7 +139,7 @@ class MobileNetV3(nn.Module):
         for k, t, c, use_se, use_hs, s in self.cfgs:
             output_channel = _make_divisible(c * width_mult, 8)
             exp_size = _make_divisible(input_channel * t, 8)
-            layers.append(block(input_channel, exp_size, output_channel, k, s, use_se, use_hs))
+            layers.append(block(input_channel, exp_size, output_channel, k, s, use_se, use_hs, prob_dropout=self.prob_dropout))
             input_channel = output_channel
         self.features = nn.Sequential(*layers)
         # building last several layers

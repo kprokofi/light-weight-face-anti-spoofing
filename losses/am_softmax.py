@@ -34,7 +34,7 @@ def label_smoothing(classes, y_hot, smoothing=0.1, dim=-1):
 class AMSoftmaxLoss(nn.Module):
     """Computes the AM-Softmax loss with cos or arc margin"""
     margin_types = ['cos', 'arc', 'adacos']
-    def __init__(self, margin_type='cos', num_classes=2, label_smooth=False, smoothing=0.1, gamma=0., m=0.5, s=30, t=1.):
+    def __init__(self, margin_type='cos', device=0, num_classes=2, label_smooth=False, smoothing=0.1, ratio=[1,2.04], gamma=0., m=0.5, s=30, t=1.):
         ''' label smoothing - flag whether or not to use label smoothing '''
         super(AMSoftmaxLoss, self).__init__()
         assert margin_type in AMSoftmaxLoss.margin_types
@@ -42,16 +42,18 @@ class AMSoftmaxLoss(nn.Module):
         assert gamma >= 0
         self.gamma = gamma
         assert m > 0
-        self.m = m
+        self.m = torch.Tensor([m/i for i in ratio]).cuda(device)
         assert s > 0
         if self.margin_type in ['arc','cos',]:
             self.s = s
         else:
             assert self.margin_type == 'adacos'
             self.s = math.sqrt(2) * math.log(num_classes - 1)
-        self.cos_m = math.cos(m)
-        self.sin_m = math.sin(m)
-        self.th = math.cos(math.pi - m)
+            if self.s <= 1:
+                self.s = 5
+        # self.cos_m = math.cos(m)
+        # self.sin_m = math.sin(m)
+        # self.th = math.cos(math.pi - m)
         assert t >= 1
         self.t = t
         self.label_smooth = label_smooth
@@ -59,27 +61,32 @@ class AMSoftmaxLoss(nn.Module):
 
     def forward(self, cos_theta, target):
         ''' target - one hot vector '''
-        cos_theta = cos_theta[0]
+        if type(cos_theta) == tuple:
+            cos_theta = cos_theta[0]
         self.classes = target.size(1)
         if self.label_smooth:
             target = label_smoothing(classes=self.classes, y_hot=target, smoothing=self.smoothing)
-        # fold one_hot to one vector [batch size]
+        # fold one_hot to one vector [batch size] (need to do it when label smooth or augmentations used)
         fold_target = target.argmax(dim=1)
+        # unfold it to one-hot()
+        one_hot_target = F.one_hot(fold_target, num_classes=self.classes)
+        m = self.m * one_hot_target
         if self.margin_type == 'cos':
-            phi_theta = cos_theta - self.m
+            phi_theta = cos_theta - m
+            output = phi_theta
         elif self.margin_type == 'arc':
-            sine = torch.sqrt(1.0 - torch.pow(cos_theta, 2))
-            phi_theta = cos_theta * self.cos_m - sine * self.sin_m #cos(theta+m)
-            phi_theta = torch.where(cos_theta > self.th, phi_theta, cos_theta - self.sin_m * self.m)
+            theta = torch.acos(cos_theta)
+            phi_theta = torch.cos(theta + self.m)
+            output = phi_theta
+            # phi_theta = torch.where(cos_theta > self.th, phi_theta, cos_theta - self.sin_m * self.m)
         else:
             assert self.margin_type == 'adacos'
             # compute outpute for adacos margin
             phi_theta = torch.acos(cos_theta)
             phi_theta = torch.cos(phi_theta + self.m)
-            one_hot = F.one_hot(cos_theta, num_classes=self.classes)
             # one_hot = torch.zeros_like(cos_theta)
             # one_hot.scatter_(1, fold_target.view(-1, 1).long(), 1)
-            output = torch.where(one_hot.bool(), phi_theta, cos_theta)
+            output = phi_theta
             with torch.no_grad():
                 # compute adaptive rescaling parameter
                 B_avg = torch.where(one_hot < 1, torch.exp(self.s * cos_theta), torch.zeros_like(cos_theta))
@@ -87,11 +94,6 @@ class AMSoftmaxLoss(nn.Module):
                 # print(B_avg)
                 theta_med = torch.median(phi_theta[one_hot == 1])
                 self.s = torch.log(B_avg) / torch.cos(torch.min(math.pi/4 * torch.ones_like(theta_med), theta_med))
-        # compute output for arc and cos margins
-        if self.margin_type in ['arc', 'cos']:
-            index = torch.zeros_like(cos_theta, dtype=torch.uint8)
-            index.scatter_(1, fold_target.data.view(-1, 1), 1)
-            output = torch.where(index.bool(), phi_theta, cos_theta)
 
         if self.gamma == 0 and self.t == 1.:
             pred = F.log_softmax(self.s*output, dim=-1)
@@ -105,3 +107,15 @@ class AMSoftmaxLoss(nn.Module):
             return F.cross_entropy(self.s*output, target)
 
         return focal_loss(F.cross_entropy(self.s*output, target, reduction='none'), self.gamma)
+
+def test():
+    criterion = AMSoftmaxLoss(margin_type='arc')
+    cos_teta = torch.randn(3,2)
+    print(cos_teta)
+    target = torch.randn(3,2)
+    print(target)
+    loss = criterion(cos_teta, target)
+    print(loss)
+
+if __name__ == '__main__':
+    test()

@@ -1,4 +1,5 @@
 import os.path as osp
+import os
 import sys
 import torch
 from importlib import import_module
@@ -10,6 +11,7 @@ from torch.utils.data import DataLoader
 from losses import AngleSimpleLinear, SoftTripleLinear
 import torch.nn as nn
 from models import mobilenetv2, mobilenetv3_large, mobilenetv3_small
+import json
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""
@@ -129,13 +131,16 @@ def make_dataset(config: dict, train_transform: object = None, val_transform: ob
         return test
     return train, val
 
-def make_loader(train, val, config):
+def make_loader(train, val, config, sampler=None):
     ''' make data loader from given train and val dataset
     train, val -> train loader, val loader'''
-
+    if sampler:
+        shuffle = False
+    else:
+        shuffle = True
     train_loader = DataLoader(dataset=train, batch_size=config['data']['batch_size'],
-                                                    shuffle=True, pin_memory=config['data']['pin_memory'],
-                                                    num_workers=config['data']['data_loader_workers'])
+                                                    shuffle=shuffle, pin_memory=config['data']['pin_memory'],
+                                                    num_workers=config['data']['data_loader_workers'], sampler=sampler)
 
     val_loader = DataLoader(dataset=val, batch_size=config['data']['batch_size'],
                                                 shuffle=True, pin_memory=config['data']['pin_memory'],
@@ -146,7 +151,7 @@ def build_model(config, args, strict=True):
     ''' build model and change layers depends on loss type'''
 
     if config['model']['model_type'] == 'Mobilenet2':
-        model = mobilenetv2()
+        model = mobilenetv2(prob_dropout=config['dropout']['prob_dropout'])
         if config['model']['pretrained']:
             model.load_state_dict(torch.load('pretrained/mobilenetv2_128x128-fd66a69d.pth', 
                                                 map_location=f'cuda:{args.GPU}'), strict=strict)
@@ -172,13 +177,13 @@ def build_model(config, args, strict=True):
     else:
         assert config['model']['model_type'] == 'Mobilenet3'
         if config['model']['model_size'] == 'large':
-            model = mobilenetv3_large()
+            model = mobilenetv3_large(prob_dropout=config['dropout']['prob_dropout'])
             if config['model']['pretrained']:
                 model.load_state_dict(torch.load('pretrained/mobilenetv3-large-1cd25616.pth', 
                                                 map_location=f'cuda:{args.GPU}'), strict=strict)
         else:
             assert config['model']['model_size'] == 'small'
-            model = mobilenetv3_small( width_mult=.75)
+            model = mobilenetv3_small(width_mult=.75, prob_dropout=config['dropout']['prob_dropout'])
             if config['model']['pretrained']:
                 model.load_state_dict(torch.load('pretrained/mobilenetv3-small-0.75-86c972c3.pth', 
                                                 map_location=f'cuda:{args.GPU}'), strict=strict)
@@ -241,3 +246,47 @@ def rand_bbox(size, lam):
     bby2 = np.clip(cy + cut_h // 2, 0, H)
 
     return bbx1, bby1, bbx2, bby2
+
+class Transform():
+    """ class to make diferent transform depends on the label """
+    def __init__(self, train_spoof=None, train_real=None, val = None):
+        self.train_spoof = train_spoof
+        self.train_real = train_real
+        self.val_transform = val
+        if not all((self.train_spoof, self.train_real)):
+            self.train = self.train_spoof or self.train_real
+            self.transforms_quantity = 1
+        else:
+            self.transforms_quantity = 2
+    def __call__(self, label, img):
+        if self.val_transform:
+            return self.val_transform(image=img)
+        if self.transforms_quantity == 1:
+            return self.train(image=img)
+        if label:
+            return self.train_spoof(image=img)
+        else:
+            assert label == 0
+            return self.train_real(image=img)
+
+def make_weights(config):
+    '''load weights for imbalance dataset to list'''
+    if config['dataset'] != 'celeba-spoof':
+        raise NotImplementedError
+    with open(os.path.join(config['data']['data_root'], 'metas/intra_test/items_train.json') , 'r') as f:
+        dataset = json.load(f)
+    n = 494185
+    weights = [0 for i in range(n)]
+    keys = list(map(int, list(dataset.keys())))
+    keys.sort()
+    assert len(keys) == n
+    for key in keys:
+        label = int(dataset[str(key)]['labels'][43])
+        if label:
+            weights[int(key)] = 0.1
+        else:
+            assert label == 0
+            weights[int(key)] = 0.204
+
+    assert len(weights) == n
+    return weights
