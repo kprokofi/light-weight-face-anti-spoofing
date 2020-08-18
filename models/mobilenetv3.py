@@ -8,7 +8,6 @@ arXiv preprint arXiv:1905.02244.
 import torch.nn as nn
 import math
 import torch.nn.functional as F
-from dropout import Dropout
 
 def _make_divisible(v, divisor, min_value=None):
     """
