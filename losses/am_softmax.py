@@ -89,10 +89,10 @@ class AMSoftmaxLoss(nn.Module):
             output = phi_theta
             with torch.no_grad():
                 # compute adaptive rescaling parameter
-                B_avg = torch.where(one_hot < 1, torch.exp(self.s * cos_theta), torch.zeros_like(cos_theta))
+                B_avg = torch.where(one_hot_target < 1, torch.exp(self.s * cos_theta), torch.zeros_like(cos_theta))
                 B_avg = torch.sum(B_avg) / cos_theta.size(0)
                 # print(B_avg)
-                theta_med = torch.median(phi_theta[one_hot == 1])
+                theta_med = torch.median(output[one_hot_target == 1])
                 self.s = torch.log(B_avg) / torch.cos(torch.min(math.pi/4 * torch.ones_like(theta_med), theta_med))
 
         if self.gamma == 0 and self.t == 1.:
@@ -109,7 +109,7 @@ class AMSoftmaxLoss(nn.Module):
         return focal_loss(F.cross_entropy(self.s*output, target, reduction='none'), self.gamma)
 
 def test():
-    criterion = AMSoftmaxLoss(margin_type='arc')
+    criterion = AMSoftmaxLoss(margin_type='adacos')
     cos_teta = torch.randn(3,2)
     print(cos_teta)
     target = torch.randn(3,2)

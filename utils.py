@@ -159,7 +159,7 @@ def build_model(config, args, strict=True):
         if config['loss']['loss_type'] == 'amsoftmax':
             model.conv = nn.Sequential(
                         nn.Conv2d(320, config['model']['embeding_dim'], 1, 1, 0, bias=False),
-                        nn.Dropout(0.5),
+                        nn.Dropout(0.2),
                         nn.BatchNorm2d(config['model']['embeding_dim']),
                         nn.PReLU()
                     )
@@ -169,7 +169,7 @@ def build_model(config, args, strict=True):
         elif config['loss']['loss_type'] == 'soft_triple':
             model.conv = nn.Sequential(
                         nn.Conv2d(320, config['model']['embeding_dim'], 1, 1, 0, bias=False),
-                        nn.Dropout(0.5),
+                        nn.Dropout(0.2),
                         nn.BatchNorm2d(config['model']['embeding_dim']),
                         nn.PReLU()
                     )
