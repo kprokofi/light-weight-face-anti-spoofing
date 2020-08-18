@@ -41,7 +41,7 @@ class AMSoftmaxLoss(nn.Module):
         self.margin_type = margin_type
         assert gamma >= 0
         self.gamma = gamma
-        assert m > 0
+        assert m >= 0
         self.m = torch.Tensor([m/i for i in ratio]).cuda(device)
         assert s > 0
         if self.margin_type in ['arc','cos',]:
