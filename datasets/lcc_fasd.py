@@ -39,9 +39,9 @@ class LCFAD(Dataset):
         img_path = os.path.join(self.root_dir, self.list_img[index])
         image = cv.imread(img_path, flags=1)
         image = cv.cvtColor(image, cv.COLOR_BGR2RGB)
+        y_label = self.labels[index]
         if self.transform:
-            image = self.transform(image=image)['image']
+            image = self.transform(label=y_label, img=image)['image']
         # [batch, channels, height, width]
         image = np.transpose(image, (2, 0, 1)).astype(np.float32)
-        y_label = self.labels[index]
         return (torch.tensor(image), y_label)

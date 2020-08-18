@@ -43,14 +43,13 @@ class CelebASpoofDataset(Dataset):
             path = data_item['path']
             label = int(data_item['labels'][43])
             
-            if cropped_face.shape[0] < 20 or cropped_face.shape[1] < 20:
-                print(path)
             # test_img = cv.resize(cropped_face, (128,128))
             # plt.imsave(f'/home/prokofiev/pytorch/antispoofing/images/{path[-9:]}', arr = test_img, format='png')
             return path, label, cropped_face.shape
 
+        label = int(data_item['labels'][43])
         if self.transform:
-            cropped_face = self.transform(image=cropped_face)['image']
+            cropped_face = self.transform(label=label, img=cropped_face)['image']
         cropped_face = np.transpose(cropped_face, (2, 0, 1)).astype(np.float32)
         return (torch.tensor(cropped_face), int(data_item['labels'][43])) #see readme of the CelebA-Spoof to get layout of labels
 
