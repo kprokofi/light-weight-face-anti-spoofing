@@ -6,11 +6,11 @@ import glog as log
 import cv2 as cv
 import numpy as np
 from scipy.spatial.distance import cosine
-from mobilenet3 import mobilenetv3_large
 from ie_tools import load_ie_model
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from utils import build_model, read_py_config
 
 class FaceDetector:
     """Wrapper class for face detector"""
@@ -51,7 +51,6 @@ class FaceDetector:
 
         if len(detections) > 1:
             detections.sort(key=lambda x: x[1], reverse=True)
-
         return detections
 
 def pred_spoof(frame, detections, spoof_model):
@@ -64,35 +63,39 @@ def pred_spoof(frame, detections, spoof_model):
         faces.append(frame[top:bottom, left:right])
 
     if faces:
+        cv.imwrite("face5.jpg", cv.resize(faces[0], (224,224)))
         faces = make_preprocessing(faces)
         spoof_model.eval()
         output = spoof_model(faces)
-        confidence = F.softmax(output, dim=-1).detach().numpy()
+        if type(output) == tuple:
+            output = output[0]
+        confidence = F.softmax(output*3, dim=-1).detach().numpy()
+        print(confidence)
         predictions = output.argmax(dim=1).detach().numpy()
         assert len(faces) == len(predictions)
-
-    return predictions, confidence
+        return predictions, confidence
+    return None, None
 
 def make_preprocessing(images):
     mean = np.array([0.485, 0.456, 0.406]).reshape(3,1,1)
     std = np.array([0.229, 0.224, 0.225]).reshape(3,1,1)
     for i in range(len(images)):
-        images[i] = cv.resize(images[i], (224,224))
+        images[i] = cv.resize(images[i], (128,128), cv.INTER_CUBIC)
+        images[i] = cv.cvtColor(images[i], cv.COLOR_BGR2RGB)
         images[i] = np.transpose(images[i], (2, 0, 1)).astype(np.float32)
         images[i] = images[i]/255
         images[i] = (images[i] - mean)/std
     return torch.Tensor(images)
-
+    
 def draw_detections(frame, detections, predictions, confidence):
     """Draws detections and labels"""
     for i, rect in enumerate(detections):
         left, top, right, bottom = rect[0]
         if predictions[i] == 1:
-            label = f'spoof: {confidence[i][1]*100}%'
+            label = f'spoof: {round(confidence[i][1]*100, 3)}%'
             cv.rectangle(frame, (left, top), (right, bottom), (255, 0, 0), thickness=2)
-        else:
-            assert predictions[i] == 0
-            label = f'real: {confidence[i][0]*100}%'
+        elif predictions[i] == 0:
+            label = f'real: {round(confidence[i][0]*100, 3)}%'
             cv.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), thickness=2)
         label_size, base_line = cv.getTextSize(label, cv.FONT_HERSHEY_SIMPLEX, 1, 1)
         top = max(top, label_size[1])
@@ -104,7 +107,8 @@ def draw_detections(frame, detections, predictions, confidence):
 
 def run(params, capture, face_det, spoof_model):
     """Starts the anti spoofing demo"""
-
+    fourcc = cv.VideoWriter_fourcc(*'mp4v')
+    writer_video = cv.VideoWriter('output_video.mp4', fourcc, 20, (1280,720))
     win_name = 'Antispoofing Recognition'
     while cv.waitKey(1) != 27:
         has_frame, frame = capture.read()
@@ -115,7 +119,7 @@ def run(params, capture, face_det, spoof_model):
         spoof_prediction, confidence = pred_spoof(frame, detections, spoof_model)
         frame = draw_detections(frame, detections, spoof_prediction, confidence)
         cv.imshow(win_name, frame)
-
+        writer_video.write(frame)
 def load_checkpoint(checkpoint, model):
     print("==> Loading checkpoint")
     model.load_state_dict(checkpoint['state_dict'])
@@ -126,11 +130,12 @@ def main():
     parser = argparse.ArgumentParser(description='antispoofing recognition live demo script')
     parser.add_argument('--video', type=str, default=None, help='Input video')
     parser.add_argument('--cam_id', type=int, default=-1, help='Input cam')
-
+    parser.add_argument('--config', type=str, default='config25.py', required=True,
+                        help='Configuration file')
     parser.add_argument('--fd_model', type=str, required=True)
     parser.add_argument('--fd_thresh', type=float, default=0.6, help='Threshold for FD')
 
-    parser.add_argument('--spf_model', type=str, default=os.path.join(current_dir, 'snapshot_MN3.pth.tar'), help='path to checkpoint of model')
+    parser.add_argument('--spf_model', type=str, default=os.path.join(current_dir, 'snapshot_MN3_32.pth.tar'), help='path to checkpoint of model')
 
     parser.add_argument('--device', type=str, default='CPU')
     parser.add_argument('-l', '--cpu_extension',
@@ -138,6 +143,8 @@ def main():
                              'impl.', type=str, default=None)
 
     args = parser.parse_args()
+    path_to_config = os.path.join(current_dir, args.config)
+    config = read_py_config(path_to_config)
 
     if args.cam_id >= 0:
         log.info('Reading from cam {}'.format(args.cam_id))
@@ -152,8 +159,8 @@ def main():
     assert cap.isOpened()
 
     face_detector = FaceDetector(args.fd_model, args.fd_thresh, args.device, args.cpu_extension)
-    spoof_model = mobilenetv3_large()
-    spoof_model.classifier[3] = nn.Linear(1280,2)
+    spoof_model = build_model(config, args, strict=True)
+
     load_checkpoint(torch.load(args.spf_model, map_location='cpu'), spoof_model)
     run(args, cap, face_detector, spoof_model)
 

@@ -6,7 +6,8 @@ from importlib import import_module
 from torch.autograd import Variable
 import numpy as np
 import torch.nn.functional as F
-from datasets import LCFAD, CelebASpoofDataset, CasiaSurfDataset
+from torch.utils.data import Dataset
+from datasets import LCFAD, CelebASpoofDataset, CasiaSurfDataset, MultiDataset
 from torch.utils.data import DataLoader
 from losses import AngleSimpleLinear, SoftTripleLinear
 import torch.nn as nn
@@ -72,24 +73,24 @@ def precision(output, target, s=None):
     accuracy = (output.argmax(dim=1) == target).float().mean().item()
     return accuracy*100
 
-def mixup_target(input, target, alpha, cuda, criterion='amsoftmax', num_classes=2):
- # compute mix-up augmentation
-    input, target_a, target_b, lam = mixup_data(input, target, alpha, cuda)
+def mixup_target(input, target, config, cuda, num_classes=2):
+    # compute mix-up augmentation
+    input, target_a, target_b, lam = mixup_data(input, target, config['aug']['alpha'], config['aug']['beta'], cuda)
     input, target_a, target_b = map(Variable, (input, target_a, target_b))
     # compute new target
     target_a_hot = F.one_hot(target_a, num_classes)
     target_b_hot = F.one_hot(target_b, num_classes)
     new_target = lam*target_a_hot + (1-lam)*target_b_hot
-    if criterion == 'amsoftmax':
+    if config['loss']['loss_type'] == 'amsoftmax':
         return input, new_target
     else:
-        assert criterion == 'cross_entropy'
+        assert config['loss']['loss_type'] == 'cross_entropy'
         return input, target_a, target_b, lam
 
-def mixup_data(x, y, alpha=1.0, cuda=0):
+def mixup_data(x, y, alpha=1.0, beta=1.0, cuda=0):
     '''Returns mixed inputs, pairs of targets, and lambda'''
     if alpha > 0:
-        lam = np.random.beta(alpha, alpha)
+        lam = np.random.beta(alpha, beta)
     else:
         lam = 1
 
@@ -99,7 +100,53 @@ def mixup_data(x, y, alpha=1.0, cuda=0):
     mixed_x = lam * x + (1 - lam) * x[index, :]
     y_a, y_b = y, y[index]
     return mixed_x, y_a, y_b, lam
-    
+
+def cutmix(input, target, config, args, num_classes=2):
+    r = np.random.rand(1)
+    if (config['aug']['beta'] > 0) and (config['aug']['alpha'] > 0) and (r < config['aug']['cutmix_prob']):
+        # generate mixed sample
+        lam = np.random.beta(config['aug']['alpha'] > 0, config['aug']['beta'] > 0)
+        rand_index = torch.randperm(input.size()[0]).cuda(device=args.GPU)
+        bbx1, bby1, bbx2, bby2 = rand_bbox(input.size(), lam)
+        input[:, :, bbx1:bbx2, bby1:bby2] = input[rand_index, :, bbx1:bbx2, bby1:bby2]
+        # adjust lambda to exactly match pixel ratio
+        lam = 1 - ((bbx2 - bbx1) * (bby2 - bby1) / (input.size()[-1] * input.size()[-2]))
+        if config['loss']['loss_type'] in ('cross_enropy', 'soft_triple'):
+            target_a = target
+            target_b = target[rand_index]
+            return input, target_a, target_b, lam
+        assert config['loss']['loss_type'] == 'amsoftmax'
+        # get one hot target vectors 
+        target_a2 = F.one_hot(target, num_classes=num_classes) 
+        target_b2 = F.one_hot(target, num_classes=num_classes)[rand_index]
+        # do merging classes (cutmix)
+        new_target = lam*target_a2 + (1.0 - lam)*target_b2
+        return input, new_target
+    if config['loss']['loss_type'] == 'amsoftmax':        
+        target = F.one_hot(target, num_classes=2)
+        return input, target
+    assert config['loss']['loss_type'] == 'cross_entropy'
+    return input, target, target, 0
+
+
+def rand_bbox(size, lam):
+    W = size[2]
+    H = size[3]
+    cut_rat = np.sqrt(1. - lam)
+    cut_w = np.int(W * cut_rat)
+    cut_h = np.int(H * cut_rat)
+
+    # uniform
+    cx = np.random.randint(W)
+    cy = np.random.randint(H)
+
+    bbx1 = np.clip(cx - cut_w // 2, 0, W)
+    bby1 = np.clip(cy - cut_h // 2, 0, H)
+    bbx2 = np.clip(cx + cut_w // 2, 0, W)
+    bby2 = np.clip(cy + cut_h // 2, 0, H)
+
+    return bbx1, bby1, bbx2, bby2
+
 def freeze_layers(model, open_layers):
 
     for name, module in model.named_children():
@@ -122,11 +169,14 @@ def make_dataset(config: dict, train_transform: object = None, val_transform: ob
         train =  CelebASpoofDataset(root_folder=config['data']['data_root'], test_mode=False, transform=train_transform)
         val = CelebASpoofDataset(root_folder=config['data']['data_root'], test_mode=True, transform=val_transform)
         test = val
-    else:
-        assert config['dataset'] == 'Casia'
+    elif config['dataset'] == 'Casia':
         train = CasiaSurfDataset(protocol=1, dir=config['data']['data_root'], mode='train', transform=train_transform)
         val = CasiaSurfDataset(protocol=1, dir=config['data']['data_root'], mode='dev', transform=val_transform)
         test = CasiaSurfDataset(protocol=1, dir=config['data']['data_root'], mode='test', transform=val_transform)
+    elif config['dataset'] == 'multi_dataset':
+        train = MultiDataset(**config['datasets'], train=True, transform=train_transform)
+        val = MultiDataset(**config['datasets'], train=False, transform=val_transform)
+        test = val
     if mode == 'eval':
         return test
     return train, val
@@ -210,43 +260,6 @@ def build_model(config, args, strict=True):
             model.classifier[4] = SoftTripleLinear(config['model']['embeding_dim'], 2, num_proxies=config['loss']['soft_triple']['K'])
     return model
 
-def cutmix(input, target, config, args):
-    r = np.random.rand(1)
-    if (config['aug']['beta'] > 0) and (config['aug']['alpha'] > 0) and (r < config['aug']['cutmix_prob']):
-        # generate mixed sample
-        lam = np.random.beta(config['aug']['alpha'] > 0, config['aug']['beta'] > 0)
-        rand_index = torch.randperm(input.size()[0]).cuda(device=args.GPU)
-        # get one hot target vectors 
-        target_a2 = F.one_hot(target) 
-        target_b2 = F.one_hot(target)[rand_index]
-        bbx1, bby1, bbx2, bby2 = rand_bbox(input.size(), lam)
-        input[:, :, bbx1:bbx2, bby1:bby2] = input[rand_index, :, bbx1:bbx2, bby1:bby2]
-        # adjust lambda to exactly match pixel ratio
-        lam = 1 - ((bbx2 - bbx1) * (bby2 - bby1) / (input.size()[-1] * input.size()[-2]))
-        # do merging classes (cutmix)
-        new_target = lam*target_a2 + (1.0 - lam)*target_b2
-        return input, new_target
-    target = F.one_hot(target, num_classes=2)
-    return input, target
-
-def rand_bbox(size, lam):
-    W = size[2]
-    H = size[3]
-    cut_rat = np.sqrt(1. - lam)
-    cut_w = np.int(W * cut_rat)
-    cut_h = np.int(H * cut_rat)
-
-    # uniform
-    cx = np.random.randint(W)
-    cy = np.random.randint(H)
-
-    bbx1 = np.clip(cx - cut_w // 2, 0, W)
-    bby1 = np.clip(cy - cut_h // 2, 0, H)
-    bbx2 = np.clip(cx + cut_w // 2, 0, W)
-    bby2 = np.clip(cy + cut_h // 2, 0, H)
-
-    return bbx1, bby1, bbx2, bby2
-
 class Transform():
     """ class to make diferent transform depends on the label """
     def __init__(self, train_spoof=None, train_real=None, val = None):
@@ -290,3 +303,24 @@ def make_weights(config):
 
     assert len(weights) == n
     return weights
+
+class MultiDataset(Dataset):
+    def __init__ (self, dataset_celeba, dataset_lccfasd, train=True, transform=None):
+        if train:
+            self.dataset_celeba = dataset_celeba(root_folder, test_mode=False, transform=transform, test_dataset=False)
+            self.dataset_lccfasd = dataset_lccfasd(root_dir, train=True, transform=transform)
+        else:
+            self.dataset_celeba = dataset_celeba(root_folder, test_mode=True, transform=transform, test_dataset=False)
+            self.dataset_lccfasd = dataset_lccfasd(root_dir, train=False, transform=transform)
+
+    def __len__(self):
+        return len(self.dataset_celeba) + len(self.dataset_lccfasd)
+
+    def __getitem__(self, indx):
+        if indx in range(len(self.dataset_celeba)):
+            return self.dataset_celeba[indx]
+        else:
+            assert indx in range(len(self.dataset_celeba):len(self.dataset_lccfasd))
+            return self.dataset_lccfasd[indx]
+
+        

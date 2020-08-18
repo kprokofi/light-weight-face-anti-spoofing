@@ -145,7 +145,7 @@ def train(train_loader, model, criterion, optimizer, epoch):
             target = target.cuda(device=args.GPU)
         # compute output and loss
         if config['aug']['type_aug'] == 'mixup':
-            aug_output = mixup_target(input, target, config['aug']['alpha'], args.GPU, criterion=config['loss']['loss_type'])
+            aug_output = mixup_target(input, target, config, args.GPU)
         if config['aug']['type_aug'] == 'cutmix':
             aug_output = cutmix(input, target, config, args)
         if config['loss']['loss_type'] == 'amsoftmax':
