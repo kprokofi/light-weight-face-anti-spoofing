@@ -53,7 +53,7 @@ def main():
                             A.HorizontalFlip(p=0.5),
                             A.augmentations.transforms.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, brightness_by_max=True, always_apply=False, p=0.3),
                             # A.augmentations.transforms.RGBShift(p=0.2),
-                            A.augmentations.transforms.ISONoise(color_shift=(0.15,0.35), intensity=(0.2, 0.5), p=0.3),
+                            A.augmentations.transforms.ISONoise(color_shift=(0.15,0.35), intensity=(0.2, 0.5), p=0.2),
                             normalize,
                             ])
 
@@ -67,7 +67,6 @@ def main():
     if sampler:
         weights = make_weights(config)
         sampler = torch.utils.data.WeightedRandomSampler(weights, 494185, replacement=True)
-    print(sampler)
     train_transform = Transform(train_spoof=train_transform_spoof, train_real=train_transform_real)
     val_transform = Transform(val=val_transform)
     train_dataset, val_dataset = make_dataset(config, train_transform, val_transform)
@@ -88,7 +87,7 @@ def main():
 
     # build optimizer and scheduler for it
     optimizer = torch.optim.SGD(model.parameters(), **config['optimizer'])
-    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, **config['schedular'])
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=60, eta_min=1e-6)
 
     # learning epochs
     for epoch in range(config['epochs']['start_epoch'], config['epochs']['max_epoch']):
