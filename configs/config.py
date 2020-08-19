@@ -1,5 +1,7 @@
 dataset = 'celeba-spoof'
 
+datasets = dict(LCCFASD_root='/home/prokofiev/pytorch/LCC_FASD', Celeba_root='/home/prokofiev/pytorch/antispoofing/CelebA_Spoof')
+
 img_norm_cfg = dict(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
 optimizer = dict(lr=0.001, momentum=0.9, weight_decay=5e-4)
@@ -26,3 +28,5 @@ aug = dict(type_aug=None, alpha=0.5, beta=0.5, cutmix_prob=0.5)
 curves = dict(det_curve='det_curve_1.png', roc_curve='roc_curve_1.png')
 
 dropout = dict(prob_dropout=0.2)
+
+data_parallel = dict(use_parallel=False, parallel_params=dict( device_ids=[0,1], output_device=0))

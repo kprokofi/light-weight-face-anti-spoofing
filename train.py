@@ -39,21 +39,21 @@ def main():
     normalize = A.Normalize(**config['img_norm_cfg'])
     train_transform_real = A.Compose([
                             A.Resize(**config['resize'], interpolation=cv2.INTER_CUBIC),
-                            A.HorizontalFlip(p=0.4),
+                            A.HorizontalFlip(p=0.5),
                             A.augmentations.transforms.Blur(blur_limit=3, p=0.2),
                             A.augmentations.transforms.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, brightness_by_max=True, always_apply=False, p=0.3),
                             A.augmentations.transforms.MotionBlur(blur_limit=4, p=0.2),
-                            A.augmentations.transforms.RGBShift(p=0.2),
+                            # A.augmentations.transforms.RGBShift(p=0.2),
                             A.augmentations.transforms.ISONoise(color_shift=(0.15,0.35), intensity=(0.2, 0.5)),
                             normalize,
                             ])
 
     train_transform_spoof = A.Compose([
                             A.Resize(**config['resize'], interpolation=cv2.INTER_CUBIC),
-                            A.HorizontalFlip(p=0.4),
-                            A.augmentations.transforms.GaussNoise(var_limit=(20,60), p=0.3),
+                            A.HorizontalFlip(p=0.5),
+                            A.augmentations.transforms.ISONoise(color_shift=(0.15,0.35), intensity=(0.2, 0.5), p=0.2),
                             A.augmentations.transforms.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, brightness_by_max=True, always_apply=False, p=0.3),
-                            A.augmentations.transforms.RGBShift(p=0.2),
+                            # A.augmentations.transforms.RGBShift(p=0.2),
                             normalize,
                             ])
 
@@ -73,17 +73,20 @@ def main():
     train_dataset, val_dataset = make_dataset(config, train_transform, val_transform)
     train_loader, val_loader = make_loader(train_dataset, val_dataset, config, sampler=sampler)
 
-    # build model
+    # build model and put it to cuda and if it needed then wrap model to data parallel
     model = build_model(config, args, strict=False)
+    model.cuda(args.GPU)
+    # os.environ['MASTER_ADDR'] = 'localhost'
+    # os.environ['MASTER_PORT'] = '12355'
+    # torch.distributed.init_process_group(backend='gloo', rank=0, world_size=4)
+    # model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[0,1], output_device=0)
+    if config['data_parallel']['use_parallel']:
+        model = torch.nn.DataParallel(model, **config['data_parallel']['parallel_params'])
 
-    #criterion
-    if config['loss']['loss_type'] == 'amsoftmax':
-        criterion = AMSoftmaxLoss(**config['loss']['amsoftmax'], device=args.GPU)
-    elif config['loss']['loss_type'] == 'soft_triple':
-        criterion = SoftTripleLoss(**config['loss']['soft_triple'])
-    else:
-        criterion = nn.CrossEntropyLoss()
+    # build a criterion
+    criterion = build_criterion(config, args)
 
+    # build optimizer and scheduler for it
     optimizer = torch.optim.SGD(model.parameters(), **config['optimizer'])
     scheduler = optim.lr_scheduler.MultiStepLR(optimizer, **config['schedular'])
 
@@ -99,7 +102,7 @@ def main():
         # evaluate on validation set
         accuracy = validate(val_loader, model, criterion)
 
-        # remember best accuracy, AUC and EER and save checkpoint
+        # remember best accuracy, AUC, EER, ACER and save checkpoint
         if accuracy > BEST_ACCURACY and args.save_checkpoint:
             AUC, EER, _ , apcer, bpcer, acer = evaulate(model, val_loader, config, args, compute_accuracy=False)
             print(f'epoch: {epoch}   AUC: {AUC}   EER: {EER}   APCER: {apcer}   BPCER: {bpcer}   ACER: {acer}')
@@ -110,7 +113,6 @@ def main():
                 BEST_ACCURACY = max(accuracy, BEST_ACCURACY)
                 BEST_EER = EER
                 BEST_AUC = AUC
-                
             
         # evaluate on val every 10 epoch and save snapshot if better results achieved
         if ((epoch%10 == 0) or (epoch == config['epochs']['max_epoch']-1)) and args.save_checkpoint:
@@ -133,9 +135,8 @@ def train(train_loader, model, criterion, optimizer, epoch):
     accuracy = AverageMeter()
 
     # model to cuda, criterion to cuda
-    model.cuda(device=args.GPU)
     criterion.cuda(device=args.GPU)
-
+    # model = torch.nn.DataParallel(model, device_ids=[0,1], output_device=0)
     # switch to train mode and train one epoch
     model.train()
     loop = tqdm(enumerate(train_loader), total=len(train_loader), leave=False)
@@ -163,6 +164,7 @@ def train(train_loader, model, criterion, optimizer, epoch):
                 output = model(input)
                 loss = mixup_criterion(criterion, output, y_a, y_b, lam)
             else:
+                print(input)
                 output = model(input)
                 loss = criterion(output, target)
         else:

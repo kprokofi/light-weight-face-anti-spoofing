@@ -144,6 +144,11 @@ class MobileNetV3(nn.Module):
         self.features = nn.Sequential(*layers)
         # building last several layers
         self.conv = conv_1x1_bn(input_channel, exp_size)
+        # k_size = (MobileNetV3.get_input_res()[0] // 16, MobileNetV3.get_input_res()[1] // 16)
+        # self.dw_pool = nn.Conv2d(exp_size, exp_size, k_size,
+        #                          groups=exp_size, bias=False)
+        # self.dw_bn = nn.BatchNorm2d(exp_size)
+
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         output_channel = {'large': 1280, 'small': 1024}
         output_channel = _make_divisible(output_channel[mode] * width_mult, 8) if width_mult > 1.0 else output_channel[mode]

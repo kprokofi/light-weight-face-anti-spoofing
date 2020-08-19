@@ -9,7 +9,7 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset
 from datasets import LCFAD, CelebASpoofDataset, CasiaSurfDataset, MultiDataset
 from torch.utils.data import DataLoader
-from losses import AngleSimpleLinear, SoftTripleLinear
+from losses import AngleSimpleLinear, SoftTripleLinear, AMSoftmaxLoss, SoftTripleLoss
 import torch.nn as nn
 from models import mobilenetv2, mobilenetv3_large, mobilenetv3_small
 import json
@@ -209,7 +209,7 @@ def build_model(config, args, strict=True):
         if config['loss']['loss_type'] == 'amsoftmax':
             model.conv = nn.Sequential(
                         nn.Conv2d(320, config['model']['embeding_dim'], 1, 1, 0, bias=False),
-                        nn.Dropout(0.2),
+                        nn.Dropout(p=config['dropout']['classifier']),
                         nn.BatchNorm2d(config['model']['embeding_dim']),
                         nn.PReLU()
                     )
@@ -219,7 +219,7 @@ def build_model(config, args, strict=True):
         elif config['loss']['loss_type'] == 'soft_triple':
             model.conv = nn.Sequential(
                         nn.Conv2d(320, config['model']['embeding_dim'], 1, 1, 0, bias=False),
-                        nn.Dropout(0.2),
+                        nn.Dropout(p=config['dropout']['classifier']),
                         nn.BatchNorm2d(config['model']['embeding_dim']),
                         nn.PReLU()
                     )
@@ -246,19 +246,30 @@ def build_model(config, args, strict=True):
 
         if config['loss']['loss_type'] == 'amsoftmax':
             model.classifier[0] = nn.Linear(exp_size, config['model']['embeding_dim'])
+            model.classifier[1] = nn.Dropout(p=config['dropout']['classifier'])
             model.classifier[2] = nn.BatchNorm1d(config['model']['embeding_dim'])
             model.classifier[4] = AngleSimpleLinear(config['model']['embeding_dim'], 2)
             
         elif config['loss']['loss_type'] == 'cross_entropy':
-            model.classifier[1] == nn.Dropout(p=0.5)
+            model.classifier[1] == nn.Dropout(p=config['dropout']['classifier'])
             model.classifier[4] = nn.Linear(1280, 2)
 
         else:
             assert config['loss']['loss_type'] == 'soft_triple'
             model.classifier[0] = nn.Linear(exp_size, config['model']['embeding_dim'])
+            model.classifier[1] = nn.Dropout(p=config['dropout']['classifier'])
             model.classifier[2] = nn.BatchNorm1d(config['model']['embeding_dim'])
             model.classifier[4] = SoftTripleLinear(config['model']['embeding_dim'], 2, num_proxies=config['loss']['soft_triple']['K'])
     return model
+
+def build_criterion(config, args):
+    if config['loss']['loss_type'] == 'amsoftmax':
+        criterion = AMSoftmaxLoss(**config['loss']['amsoftmax'], device=args.GPU)
+    elif config['loss']['loss_type'] == 'soft_triple':
+        criterion = SoftTripleLoss(**config['loss']['soft_triple'])
+    else:
+        criterion = nn.CrossEntropyLoss()
+    return criterion
 
 class Transform():
     """ class to make diferent transform depends on the label """
@@ -303,24 +314,5 @@ def make_weights(config):
 
     assert len(weights) == n
     return weights
-
-class MultiDataset(Dataset):
-    def __init__ (self, dataset_celeba, dataset_lccfasd, train=True, transform=None):
-        if train:
-            self.dataset_celeba = dataset_celeba(root_folder, test_mode=False, transform=transform, test_dataset=False)
-            self.dataset_lccfasd = dataset_lccfasd(root_dir, train=True, transform=transform)
-        else:
-            self.dataset_celeba = dataset_celeba(root_folder, test_mode=True, transform=transform, test_dataset=False)
-            self.dataset_lccfasd = dataset_lccfasd(root_dir, train=False, transform=transform)
-
-    def __len__(self):
-        return len(self.dataset_celeba) + len(self.dataset_lccfasd)
-
-    def __getitem__(self, indx):
-        if indx in range(len(self.dataset_celeba)):
-            return self.dataset_celeba[indx]
-        else:
-            assert indx in range(len(self.dataset_celeba):len(self.dataset_lccfasd))
-            return self.dataset_lccfasd[indx]
 
         

@@ -50,7 +50,7 @@ class AMSoftmaxLoss(nn.Module):
             assert self.margin_type == 'adacos'
             self.s = math.sqrt(2) * math.log(num_classes - 1)
             if self.s <= 1:
-                self.s = 5
+                self.s = 15
         # self.cos_m = math.cos(m)
         # self.sin_m = math.sin(m)
         # self.th = math.cos(math.pi - m)
@@ -93,7 +93,9 @@ class AMSoftmaxLoss(nn.Module):
                 B_avg = torch.sum(B_avg) / cos_theta.size(0)
                 # print(B_avg)
                 theta_med = torch.median(output[one_hot_target == 1])
+                print(self.s)
                 self.s = torch.log(B_avg) / torch.cos(torch.min(math.pi/4 * torch.ones_like(theta_med), theta_med))
+                print(self.s)
 
         if self.gamma == 0 and self.t == 1.:
             pred = F.log_softmax(self.s*output, dim=-1)
