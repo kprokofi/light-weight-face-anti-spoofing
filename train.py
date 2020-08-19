@@ -51,9 +51,9 @@ def main():
     train_transform_spoof = A.Compose([
                             A.Resize(**config['resize'], interpolation=cv2.INTER_CUBIC),
                             A.HorizontalFlip(p=0.5),
-                            A.augmentations.transforms.ISONoise(color_shift=(0.15,0.35), intensity=(0.2, 0.5), p=0.2),
                             A.augmentations.transforms.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, brightness_by_max=True, always_apply=False, p=0.3),
                             # A.augmentations.transforms.RGBShift(p=0.2),
+                            A.augmentations.transforms.ISONoise(color_shift=(0.15,0.35), intensity=(0.2, 0.5), p=0.3),
                             normalize,
                             ])
 
