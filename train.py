@@ -53,7 +53,7 @@ def main():
                             A.HorizontalFlip(p=0.5),
                             A.augmentations.transforms.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, brightness_by_max=True, always_apply=False, p=0.3),
                             # A.augmentations.transforms.RGBShift(p=0.2),
-                            A.augmentations.transforms.ISONoise(color_shift=(0.15,0.35), intensity=(0.2, 0.5), p=0.3),
+                            A.augmentations.transforms.ISONoise(color_shift=(0.15,0.35), intensity=(0.2, 0.5), p=0.2),
                             normalize,
                             ])
 
@@ -76,10 +76,7 @@ def main():
     # build model and put it to cuda and if it needed then wrap model to data parallel
     model = build_model(config, args, strict=False)
     model.cuda(args.GPU)
-    # os.environ['MASTER_ADDR'] = 'localhost'
-    # os.environ['MASTER_PORT'] = '12355'
-    # torch.distributed.init_process_group(backend='gloo', rank=0, world_size=4)
-    # model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[0,1], output_device=0)
+
     if config['data_parallel']['use_parallel']:
         model = torch.nn.DataParallel(model, **config['data_parallel']['parallel_params'])
 
@@ -110,12 +107,14 @@ def main():
                 BEST_ACER = acer
                 checkpoint = {'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch':epoch}
                 save_checkpoint(checkpoint, f'{experiment_path}/{experiment_snapshot}')
-                BEST_ACCURACY = max(accuracy, BEST_ACCURACY)
+                BEST_ACCURACY = accuracy
                 BEST_EER = EER
                 BEST_AUC = AUC
             
         # evaluate on val every 10 epoch and save snapshot if better results achieved
         if ((epoch%10 == 0) or (epoch == config['epochs']['max_epoch']-1)) and args.save_checkpoint:
+            if accuracy == BEST_ACCURACY:
+                continue
             AUC, EER, _ , apcer, bpcer, acer = evaulate(model, val_loader, config, args, compute_accuracy=False)
             print(f'epoch: {epoch}   AUC: {AUC}   EER: {EER}   APCER: {apcer}   BPCER: {bpcer}   ACER: {acer}')
             if acer < BEST_ACER:
@@ -125,6 +124,26 @@ def main():
                 BEST_EER = EER
                 BEST_AUC = AUC
         print(f'current val accuracy:  {BEST_ACCURACY}  current AUC: {BEST_AUC}  current EER: {BEST_EER} best ACER: {BEST_ACER}')
+    if config['evaulation']:
+        print('_____________EVAULATION_____________')
+        # load snapshot
+        path_to_experiment = os.path.join(config['checkpoint']['experiment_path'], config['checkpoint']['snapshot_name'])
+        checkpoint = torch.load(path_to_experiment, map_location=torch.device(f'cuda:{args.GPU}')) 
+        load_checkpoint(checkpoint, model, optimizer=None)
+        epoch_of_checkpoint = checkpoint['epoch']
+        test_dataset = make_dataset(config, val_transform=val_transform, mode='eval')
+        test_loader = DataLoader(dataset=test_dataset, batch_size=config['data']['batch_size'],
+                                                shuffle=True, pin_memory=config['data']['pin_memory'],
+                                                num_workers=config['data']['data_loader_workers'])
+
+        AUC, EER, accur , apcer, bpcer, acer, _, _ = evaulate(model, test_loader, config, args, compute_accuracy=True)
+        print(f'EER = {round(EER*100,2)}')
+        print(f'accuracy on test data = {round(np.mean(accur),3)}')
+        print(f'AUC = {round(AUC,3)}')
+        print(f'apcer = {round(apcer*100,2)}')
+        print(f'bpcer = {round(bpcer*100,2)}')
+        print(f'acer = {round(acer*100,2)}')
+        print(f'checkpoint made on {epoch_of_checkpoint} epoch')
 
 def train(train_loader, model, criterion, optimizer, epoch):
     global STEP, args, config
@@ -155,6 +174,7 @@ def train(train_loader, model, criterion, optimizer, epoch):
                 output = model(input)
                 loss = criterion(output, targets)
             else:
+                # print(type(model))
                 output = model(input)
                 new_target = F.one_hot(target, num_classes=2)
                 loss = criterion(output, new_target)
@@ -164,7 +184,7 @@ def train(train_loader, model, criterion, optimizer, epoch):
                 output = model(input)
                 loss = mixup_criterion(criterion, output, y_a, y_b, lam)
             else:
-                print(input)
+                # print(type(model))
                 output = model(input)
                 loss = criterion(output, target)
         else:
