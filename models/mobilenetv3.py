@@ -8,6 +8,7 @@ arXiv preprint arXiv:1905.02244.
 import torch.nn as nn
 import math
 import torch.nn.functional as F
+from dropout import Dropout
 
 def _make_divisible(v, divisor, min_value=None):
     """
@@ -86,7 +87,7 @@ class InvertedResidual(nn.Module):
         super(InvertedResidual, self).__init__()
         assert stride in [1, 2]
         self.identity = stride == 1 and inp == oup
-        self.dropout2d = nn.Dropout2d(p=prob_dropout)
+        self.dropout2d = Dropout(dist='gaussian', mu=0.1 , sigma=0.03, p=prob_dropout)
         if inp == hidden_dim:
             self.conv = nn.Sequential(
                 # dw
@@ -144,7 +145,7 @@ class MobileNetV3(nn.Module):
         self.features = nn.Sequential(*layers)
         # building last several layers
         self.conv = conv_1x1_bn(input_channel, exp_size)
-        # k_size = (MobileNetV3.get_input_res()[0] // 16, MobileNetV3.get_input_res()[1] // 16)
+        # k_size = (128 // 32, 128 // 32)
         # self.dw_pool = nn.Conv2d(exp_size, exp_size, k_size,
         #                          groups=exp_size, bias=False)
         # self.dw_bn = nn.BatchNorm2d(exp_size)
@@ -152,7 +153,7 @@ class MobileNetV3(nn.Module):
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         output_channel = {'large': 1280, 'small': 1024}
         output_channel = _make_divisible(output_channel[mode] * width_mult, 8) if width_mult > 1.0 else output_channel[mode]
-        print(exp_size)
+        # self.conv1_extra = nn.Conv2d(exp_size, 128, 1, stride=1, padding=0, bias=False)
         self.classifier = nn.Sequential(
             nn.Linear(exp_size, output_channel),
             nn.Dropout(0.5),
@@ -161,12 +162,15 @@ class MobileNetV3(nn.Module):
             nn.Linear(output_channel, num_classes),
         )
 
-        # self._initialize_weights()
+        self._initialize_weights()
 
     def forward(self, x):
         x = self.features(x)
         x = self.conv(x)
         x = self.avgpool(x)
+        # x = self.dw_pool(x)
+        # x = self.dw_bn(x)
+        # x = self.conv1_extra(x)
         x = x.view(x.size(0), -1)
         x = self.classifier(x)
         return x

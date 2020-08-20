@@ -109,7 +109,7 @@ def main():
                 BEST_ACER = acer
                 checkpoint = {'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch':epoch}
                 save_checkpoint(checkpoint, f'{experiment_path}/{experiment_snapshot}')
-                BEST_ACCURACY = max(accuracy, BEST_ACCURACY)
+                BEST_ACCURACY = accuracy
                 BEST_EER = EER
                 BEST_AUC = AUC
             

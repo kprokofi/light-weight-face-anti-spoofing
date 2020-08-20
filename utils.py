@@ -13,6 +13,7 @@ from losses import AngleSimpleLinear, SoftTripleLinear, AMSoftmaxLoss, SoftTripl
 import torch.nn as nn
 from models import mobilenetv2, mobilenetv3_large, mobilenetv3_small
 import json
+from models import Dropout
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""
@@ -164,11 +165,11 @@ def make_dataset(config: dict, train_transform: object = None, val_transform: ob
     if config['dataset'] == 'LCCFASD':
         train =  LCFAD(root_dir=config['data']['data_root'], train=True, transform=train_transform)
         val = LCFAD(root_dir=config['data']['data_root'], train=False, transform=val_transform)
-        test = val
+        test = CelebASpoofDataset(root_folder=config['datasets']['Celeba_root'], test_mode=True, transform=val_transform)
     elif config['dataset'] == 'celeba-spoof':
         train =  CelebASpoofDataset(root_folder=config['data']['data_root'], test_mode=False, transform=train_transform)
         val = CelebASpoofDataset(root_folder=config['data']['data_root'], test_mode=True, transform=val_transform)
-        test = val
+        test = LCFAD(root_dir=config['datasets']['LCCFASD_root'], train=False, transform=val_transform)
     elif config['dataset'] == 'Casia':
         train = CasiaSurfDataset(protocol=1, dir=config['data']['data_root'], mode='train', transform=train_transform)
         val = CasiaSurfDataset(protocol=1, dir=config['data']['data_root'], mode='dev', transform=val_transform)
@@ -176,7 +177,7 @@ def make_dataset(config: dict, train_transform: object = None, val_transform: ob
     elif config['dataset'] == 'multi_dataset':
         train = MultiDataset(**config['datasets'], train=True, transform=train_transform)
         val = MultiDataset(**config['datasets'], train=False, transform=val_transform)
-        test = val
+        test = LCFAD(root_dir=config['datasets']['LCCFASD_root'], train=False, transform=val_transform)
     if mode == 'eval':
         return test
     return train, val
@@ -246,7 +247,7 @@ def build_model(config, args, strict=True):
 
         if config['loss']['loss_type'] == 'amsoftmax':
             model.classifier[0] = nn.Linear(exp_size, config['model']['embeding_dim'])
-            model.classifier[1] = nn.Dropout(p=config['dropout']['classifier'])
+            model.classifier[1] = Dropout(dist='gaussian', mu=0.1, sigma=0.03, p=config['dropout']['classifier'])
             model.classifier[2] = nn.BatchNorm1d(config['model']['embeding_dim'])
             model.classifier[4] = AngleSimpleLinear(config['model']['embeding_dim'], 2)
             
