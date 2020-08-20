@@ -169,7 +169,8 @@ def make_dataset(config: dict, train_transform: object = None, val_transform: ob
     elif config['dataset'] == 'celeba-spoof':
         train =  CelebASpoofDataset(root_folder=config['data']['data_root'], test_mode=False, transform=train_transform)
         val = CelebASpoofDataset(root_folder=config['data']['data_root'], test_mode=True, transform=val_transform)
-        test = LCFAD(root_dir=config['datasets']['LCCFASD_root'], train=False, transform=val_transform)
+        # test = LCFAD(root_dir=config['datasets']['LCCFASD_root'], train=False, transform=val_transform)
+        test = val
     elif config['dataset'] == 'Casia':
         train = CasiaSurfDataset(protocol=1, dir=config['data']['data_root'], mode='train', transform=train_transform)
         val = CasiaSurfDataset(protocol=1, dir=config['data']['data_root'], mode='dev', transform=val_transform)
