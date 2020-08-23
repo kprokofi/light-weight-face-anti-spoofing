@@ -151,6 +151,10 @@ def train(train_loader, model, criterion, optimizer, epoch):
         if config['loss']['loss_type'] == 'amsoftmax':
             if config['aug']['type_aug'] != None:
                 input, targets = aug_output
+                # features = model.compute_features(input)
+                # logits = model.copute_logits(features)
+                # features = RSC(features, logits, target)
+                # output = model.copute_logits(features)
                 output = model(input)
                 loss = criterion(output, targets)
             else:
@@ -163,7 +167,6 @@ def train(train_loader, model, criterion, optimizer, epoch):
                 output = model(input)
                 loss = mixup_criterion(criterion, output, y_a, y_b, lam)
             else:
-                print(input)
                 output = model(input)
                 loss = criterion(output, target)
         else:
