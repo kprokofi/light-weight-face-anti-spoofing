@@ -208,6 +208,17 @@ class MobileNetV3(nn.Module):
         x = self.classifier(x)
         return x
 
+    def make_features(self, input):
+        output = self.features(input)
+        output = self.conv(output)
+        return output
+        
+    def make_logits(self, features):
+        output = self.avgpool(features)
+        output = output.view(output.size(0), -1)
+        output = self.classifier(output)
+        return output
+
     def _initialize_weights(self):
         for m in self.modules():
             if isinstance(m, nn.Conv2d):

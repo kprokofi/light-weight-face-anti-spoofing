@@ -178,7 +178,8 @@ def make_dataset(config: dict, train_transform: object = None, val_transform: ob
     elif config['dataset'] == 'multi_dataset':
         train = MultiDataset(**config['datasets'], train=True, transform=train_transform)
         val = MultiDataset(**config['datasets'], train=False, transform=val_transform)
-        test = LCFAD(root_dir=config['datasets']['LCCFASD_root'], train=False, transform=val_transform)
+        # test = LCFAD(root_dir=config['datasets']['LCCFASD_root'], train=False, transform=val_transform)
+        test = CelebASpoofDataset(root_folder=config['datasets']['Celeba_root'], test_mode=True, transform=val_transform)
     if mode == 'eval':
         return test
     return train, val
@@ -248,7 +249,10 @@ def build_model(config, args, strict=True):
 
         if config['loss']['loss_type'] == 'amsoftmax':
             model.classifier[0] = nn.Linear(exp_size, config['model']['embeding_dim'])
-            model.classifier[1] = Dropout(dist='gaussian', mu=0.1, sigma=0.03, p=config['dropout']['classifier'])
+            model.classifier[1] = Dropout(dist=config['dropout']['type'], mu=config['dropout']['mu'], 
+                                                        sigma=config['dropout']['sigma'], 
+                                                        p=config['dropout']['classifier'])
+
             model.classifier[2] = nn.BatchNorm1d(config['model']['embeding_dim'])
             model.classifier[4] = AngleSimpleLinear(config['model']['embeding_dim'], 2)
             
@@ -317,4 +321,39 @@ def make_weights(config):
     assert len(weights) == n
     return weights
 
-        
+def make_output(model, input, target, config):
+    ''' target - one hot
+    return output 
+    If use rsc compute output applying channel-wise rsc method'''
+    if config['RSC']['use_rsc']:
+        # making features before avg pooling
+        features = model.make_features(input)
+        # do everything after convolutions layers, strating with avg pooling
+        logits = model.make_logits(features)
+        if type(logits) == tuple:
+            logits = logits[0]
+        # take a derivative, make tensor, shape as features, but gradients insted features
+        target_logits = torch.sum(logits*target, dim=1)
+        gradients = torch.autograd.grad(target_logits, features, grad_outputs=torch.ones_like(target_logits), create_graph=True)
+        # gradients = gradients[0] * features # here the same gradients and maybe multiply them with features
+        gradients = gradients[0]
+        # get value of 1-p quatile
+        quantile = torch.tensor(np.quantile(a=gradients.data.cpu().numpy(), q=1-config['RSC']['p'], axis=(1,2,3)), device=input.device)
+        quantile = quantile.reshape(input.size(0),1,1,1)
+        # create mask
+        mask = gradients < quantile
+        # element wise product of features and mask, correction for expectition value 
+        new_features = (features*mask)/(1-config['RSC']['p'])
+        # compute new logits
+        new_logits = model.make_logits(new_features)
+        if type(new_logits) == tuple:
+            new_logits = new_logits[0]
+        # compute this operation batch wise
+        random_uniform = torch.rand(size=(input.size(0), 1), device=input.device)
+        random_mask = random_uniform <= config['RSC']['b']
+        output = torch.where(random_mask, new_logits, logits)
+        return output
+    else:
+        assert config['RSC']['use_rsc'] == False
+        return model.forward(input)
+
