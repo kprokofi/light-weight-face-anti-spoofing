@@ -87,7 +87,7 @@ def main():
 
     # build optimizer and scheduler for it
     optimizer = torch.optim.SGD(model.parameters(), **config['optimizer'])
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=60, eta_min=1e-6)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config['epochs']['max_epoch'], eta_min=1e-6)
 
     # learning epochs
     for epoch in range(config['epochs']['start_epoch'], config['epochs']['max_epoch']):
@@ -151,27 +151,23 @@ def train(train_loader, model, criterion, optimizer, epoch):
         if config['loss']['loss_type'] == 'amsoftmax':
             if config['aug']['type_aug'] != None:
                 input, targets = aug_output
-                # features = model.compute_features(input)
-                # logits = model.copute_logits(features)
-                # features = RSC(features, logits, target)
-                # output = model.copute_logits(features)
-                output = model(input)
+                output = make_output(model, input, target, config)
                 loss = criterion(output, targets)
             else:
-                output = model(input)
                 new_target = F.one_hot(target, num_classes=2)
+                output = make_output(model, input, new_target, config)
                 loss = criterion(output, new_target)
         elif config['loss']['loss_type'] == 'cross_entropy':
             if config['aug']['type_aug'] != None:
                 input, y_a, y_b, lam = aug_output
-                output = model(input)
+                output = make_output(model, input, target, config)
                 loss = mixup_criterion(criterion, output, y_a, y_b, lam)
             else:
-                output = model(input)
+                output = make_output(model, input, target, config)
                 loss = criterion(output, target)
         else:
             assert config['loss']['loss_type'] == 'soft_triple'
-            output = model(input)
+            output = make_output(model, input, target, config)
             loss = criterion(output, target)
 
         # compute gradient and do SGD step
@@ -212,7 +208,7 @@ def validate(val_loader, model, criterion):
 
         # computing output and loss
         with torch.no_grad():
-            output = model(input)
+            output = model.forward(input)
             if config['loss']['loss_type'] == 'amsoftmax':
                 new_target = F.one_hot(target, num_classes=2)
                 loss = criterion(output, new_target)
