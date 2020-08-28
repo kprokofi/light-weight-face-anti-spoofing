@@ -82,20 +82,22 @@ class AMSoftmaxLoss(nn.Module):
         else:
             assert self.margin_type == 'adacos'
             # compute outpute for adacos margin
-            phi_theta = torch.acos(cos_theta)
-            phi_theta = torch.cos(phi_theta + self.m)
+            zero = torch.tensor(0.).to(cos_theta.device)
+            phi_theta = torch.where(one_hot_target.bool(), torch.acos(cos_theta), zero)
+            # phi_theta = torch.cos(phi_theta + self.m)
             # one_hot = torch.zeros_like(cos_theta)
             # one_hot.scatter_(1, fold_target.view(-1, 1).long(), 1)
-            output = phi_theta
             with torch.no_grad():
                 # compute adaptive rescaling parameter
-                B_avg = torch.where(one_hot_target < 1, torch.exp(self.s * cos_theta), torch.zeros_like(cos_theta))
+                B_avg = torch.where(one_hot_target < 1, torch.exp(self.s * cos_theta), zero)
                 B_avg = torch.sum(B_avg) / cos_theta.size(0)
                 # print(B_avg)
-                theta_med = torch.median(output[one_hot_target == 1])
+                theta_med = torch.median(torch.sum(phi_theta, dim=1)).item()
+                theta_med = min(math.pi / 4., theta_med)
                 print(self.s)
-                self.s = torch.log(B_avg) / torch.cos(torch.min(math.pi/4 * torch.ones_like(theta_med), theta_med))
+                self.s = torch.log(B_avg) / math.cos(theta_med)
                 print(self.s)
+                output = cos_theta
 
         if self.gamma == 0 and self.t == 1.:
             pred = F.log_softmax(self.s*output, dim=-1)

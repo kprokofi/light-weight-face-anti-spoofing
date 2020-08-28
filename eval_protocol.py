@@ -8,7 +8,7 @@ import torch
 import numpy as np
 import argparse
 import os
-from utils import make_loader, make_dataset, load_checkpoint, build_model, read_py_config, Transform
+from utils import make_loader, make_dataset, load_checkpoint, build_model, read_py_config, Transform, make_output
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
@@ -30,7 +30,10 @@ def evaulate(model, loader, config, args, compute_accuracy=True):
         target = target.cuda(device=args.GPU)
         # target = 1 - target
         with torch.no_grad():
-            output = model(input)
+            features = model(input)
+            if config['data_parallel']['use_parallel']:
+                model = model.module
+            output = model.make_logits(features)
             if type(output)==tuple:
                 output = output[0]
             y_true = target.detach().cpu().numpy()
@@ -90,16 +93,21 @@ def DETCurve(fps,fns, EER, config):
     The false positive rate is assumed to be increasing while the false
     negative rate is assumed to be decreasing.
     """
-    fig,ax = plt.subplots()
+    fig,ax = plt.subplots(figsize=(8,8))
     plt.plot(fps,fns, label=f"DET curve, EER%={round(EER*100, 3)}")
     plt.yscale('log')
     plt.xscale('log')
-    ticks_to_use = [0.001,0.002,0.005,0.01,0.02,0.05,0.1,0.2,0.5,1,2,5,10,20,50]
+    plt.xlabel('FAR', fontsize=16)
+    plt.ylabel('FRR', fontsize=16)
+    ticks_to_use = [0.001,0.002,0.005,0.01,0.02,0.05,0.1,0.2,0.5,1]
     ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
     ax.get_yaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
     ax.set_xticks(ticks_to_use)
     ax.set_yticks(ticks_to_use)
-    plt.axis([0.001,50,0.001,50])
+    plt.xticks(rotation=45)
+    plt.axis([0.001,1,0.001,1])
+    plt.title('DET curve', fontsize=20)
+    plt.legend(loc='upper right', fontsize=16)
     fig.savefig(config['curves']['det_curve'])
 
 def main():
@@ -113,8 +121,11 @@ def main():
 
     path_to_config = os.path.join(current_dir, args.config)
     config = read_py_config(path_to_config)
+    config['model']['pretrained'] = False
     model = build_model(config, args, strict=True)
     model.cuda(device=args.GPU)
+    if config['data_parallel']['use_parallel']:
+        model = torch.nn.DataParallel(model, **config['data_parallel']['parallel_params'])
     # load snapshot
     path_to_experiment = os.path.join(config['checkpoint']['experiment_path'], config['checkpoint']['snapshot_name'])
     checkpoint = torch.load(path_to_experiment, map_location=torch.device(f'cuda:{args.GPU}')) 

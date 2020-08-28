@@ -51,7 +51,7 @@ class CelebASpoofDataset(Dataset):
         if self.transform:
             cropped_face = self.transform(label=label, img=cropped_face)['image']
         cropped_face = np.transpose(cropped_face, (2, 0, 1)).astype(np.float32)
-        return (torch.tensor(cropped_face), int(data_item['labels'][43])) #see readme of the CelebA-Spoof to get layout of labels
+        return (torch.tensor(cropped_face), torch.tensor(int(data_item['labels'][43]), dtype=torch.long)) #see readme of the CelebA-Spoof to get layout of labels
 
 def clamp(x, min_x, max_x):
     return min(max(x, min_x), max_x)

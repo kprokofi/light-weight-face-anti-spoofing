@@ -34,13 +34,14 @@ STEP, VAL_STEP = 0, 0
 BEST_ACCURACY, BEST_AUC, BEST_EER, BEST_ACER = 0, 0, float('inf'), float('inf')
 def main():
     global args, BEST_ACCURACY, BEST_EER, BEST_AUC, BEST_ACER, config
-
+    # print experiments param
+    init_experiment(config, path_to_config)
     # preprocessing data
     normalize = A.Normalize(**config['img_norm_cfg'])
     train_transform_real = A.Compose([
                             A.Resize(**config['resize'], interpolation=cv2.INTER_CUBIC),
                             A.HorizontalFlip(p=0.5),
-                            A.augmentations.transforms.Blur(blur_limit=3, p=0.2),
+                            # A.augmentations.transforms.Blur(blur_limit=3, p=0.2),
                             A.augmentations.transforms.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, brightness_by_max=True, always_apply=False, p=0.3),
                             A.augmentations.transforms.MotionBlur(blur_limit=4, p=0.2),
                             # A.augmentations.transforms.RGBShift(p=0.2),
@@ -53,7 +54,8 @@ def main():
                             A.HorizontalFlip(p=0.5),
                             A.augmentations.transforms.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, brightness_by_max=True, always_apply=False, p=0.3),
                             # A.augmentations.transforms.RGBShift(p=0.2),
-                            A.augmentations.transforms.ISONoise(color_shift=(0.15,0.35), intensity=(0.2, 0.5), p=0.2),
+                            A.augmentations.transforms.MotionBlur(blur_limit=4, p=0.2),
+                            # A.augmentations.transforms.ISONoise(color_shift=(0.15,0.35), intensity=(0.2, 0.5), p=0.2),
                             normalize,
                             ])
 
@@ -64,10 +66,10 @@ def main():
     
     # load data
     sampler = config['data']['sampler']
+    print(f'SAMPER:{sampler}')
     if sampler:
         weights = make_weights(config)
         sampler = torch.utils.data.WeightedRandomSampler(weights, 494185, replacement=True)
-    print(sampler)
     train_transform = Transform(train_spoof=train_transform_spoof, train_real=train_transform_real)
     val_transform = Transform(val=val_transform)
     train_dataset, val_dataset = make_dataset(config, train_transform, val_transform)
@@ -79,13 +81,13 @@ def main():
 
     if config['data_parallel']['use_parallel']:
         model = torch.nn.DataParallel(model, **config['data_parallel']['parallel_params'])
-
+    
     # build a criterion
     criterion = build_criterion(config, args)
 
     # build optimizer and scheduler for it
     optimizer = torch.optim.SGD(model.parameters(), **config['optimizer'])
-    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, **config['schedular'])
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config['epochs']['max_epoch'], eta_min=1e-6)
 
     # learning epochs
     for epoch in range(config['epochs']['start_epoch'], config['epochs']['max_epoch']):
@@ -124,26 +126,10 @@ def main():
                 BEST_EER = EER
                 BEST_AUC = AUC
         print(f'current val accuracy:  {BEST_ACCURACY}  current AUC: {BEST_AUC}  current EER: {BEST_EER} best ACER: {BEST_ACER}')
+    # evaulate in the end of training    
     if config['evaulation']:
-        print('_____________EVAULATION_____________')
-        # load snapshot
-        path_to_experiment = os.path.join(config['checkpoint']['experiment_path'], config['checkpoint']['snapshot_name'])
-        checkpoint = torch.load(path_to_experiment, map_location=torch.device(f'cuda:{args.GPU}')) 
-        load_checkpoint(checkpoint, model, optimizer=None)
-        epoch_of_checkpoint = checkpoint['epoch']
-        test_dataset = make_dataset(config, val_transform=val_transform, mode='eval')
-        test_loader = DataLoader(dataset=test_dataset, batch_size=config['data']['batch_size'],
-                                                shuffle=True, pin_memory=config['data']['pin_memory'],
-                                                num_workers=config['data']['data_loader_workers'])
-
-        AUC, EER, accur , apcer, bpcer, acer, _, _ = evaulate(model, test_loader, config, args, compute_accuracy=True)
-        print(f'EER = {round(EER*100,2)}')
-        print(f'accuracy on test data = {round(np.mean(accur),3)}')
-        print(f'AUC = {round(AUC,3)}')
-        print(f'apcer = {round(apcer*100,2)}')
-        print(f'bpcer = {round(bpcer*100,2)}')
-        print(f'acer = {round(acer*100,2)}')
-        print(f'checkpoint made on {epoch_of_checkpoint} epoch')
+        eval_model(model, config, val_transform, map_location = args.GPU, eval_func = evaulate, file_name='LCC_FASD.txt', flag=None)
+        eval_model(model, config, val_transform, map_location = args.GPU, eval_func = evaulate, file_name='Celeba_test.txt', flag=True)
 
 def train(train_loader, model, criterion, optimizer, epoch):
     global STEP, args, config
@@ -155,7 +141,6 @@ def train(train_loader, model, criterion, optimizer, epoch):
 
     # model to cuda, criterion to cuda
     criterion.cuda(device=args.GPU)
-    # model = torch.nn.DataParallel(model, device_ids=[0,1], output_device=0)
     # switch to train mode and train one epoch
     model.train()
     loop = tqdm(enumerate(train_loader), total=len(train_loader), leave=False)
@@ -171,25 +156,23 @@ def train(train_loader, model, criterion, optimizer, epoch):
         if config['loss']['loss_type'] == 'amsoftmax':
             if config['aug']['type_aug'] != None:
                 input, targets = aug_output
-                output = model(input)
+                output = make_output(model, input, target, config)
                 loss = criterion(output, targets)
             else:
-                # print(type(model))
-                output = model(input)
                 new_target = F.one_hot(target, num_classes=2)
+                output = make_output(model, input, new_target, config)
                 loss = criterion(output, new_target)
         elif config['loss']['loss_type'] == 'cross_entropy':
             if config['aug']['type_aug'] != None:
                 input, y_a, y_b, lam = aug_output
-                output = model(input)
+                output = make_output(model, input, target, config)
                 loss = mixup_criterion(criterion, output, y_a, y_b, lam)
             else:
-                # print(type(model))
-                output = model(input)
+                output = make_output(model, input, target, config)
                 loss = criterion(output, target)
         else:
             assert config['loss']['loss_type'] == 'soft_triple'
-            output = model(input)
+            output = make_output(model, input, target, config)
             loss = criterion(output, target)
 
         # compute gradient and do SGD step
@@ -230,7 +213,10 @@ def validate(val_loader, model, criterion):
 
         # computing output and loss
         with torch.no_grad():
-            output = model(input)
+            features = model(input)
+            if config['data_parallel']['use_parallel']:
+                model = model.module
+            output = model.make_logits(features)
             if config['loss']['loss_type'] == 'amsoftmax':
                 new_target = F.one_hot(target, num_classes=2)
                 loss = criterion(output, new_target)
@@ -259,5 +245,62 @@ def mixup_criterion(criterion, pred, y_a, y_b, lam):
         pred = pred[0]
     return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
 
+def eval_model(model, config, transform, eval_func, file_name, map_location = 0, flag=None):
+    if flag:
+        config['test_dataset']['type'] = 'celeba-spoof'
+
+    print('_____________EVAULATION_____________')
+    # load snapshot
+    path_to_experiment = os.path.join(config['checkpoint']['experiment_path'], config['checkpoint']['snapshot_name'])
+    checkpoint = torch.load(path_to_experiment, map_location=torch.device(f'cuda:{map_location}')) 
+    load_checkpoint(checkpoint, model, optimizer=None)
+    epoch_of_checkpoint = checkpoint['epoch']
+    # making dataset
+    test_dataset = make_dataset(config, val_transform=transform, mode='eval')
+    test_loader = DataLoader(dataset=test_dataset, batch_size=config['data']['batch_size'],
+                                                shuffle=True, pin_memory=config['data']['pin_memory'],
+                                                num_workers=config['data']['data_loader_workers'])
+    # printing results
+    AUC, EER, accur, apcer, bpcer, acer, _, _ = evaulate(model, test_loader, config, args, compute_accuracy=True)
+    results = f'''accuracy on test data = {round(np.mean(accur),3)}     AUC = {round(AUC,3)}     EER = {round(EER*100,2)}     apcer = {round(apcer*100,2)}     bpcer = {round(bpcer*100,2)}     acer = {round(acer*100,2)}   checkpoint made on {epoch_of_checkpoint} epoch'''  
+    with open(os.path.join(config['checkpoint']['experiment_path'], 'test.txt'), 'w') as f:
+        f.write(results)
+
+def init_experiment(config, path_to_config):
+    print(f'_______INIT EXPERIMENT {os.path.splitext(path_to_config)[0][-2:]}______')
+    print('\n\nSNAPSHOT')
+    for key, item in config['checkpoint'].items():
+            print(f'{key} --> {item}')
+    print('\n\nMODEL')
+    for key, item in config['model'].items():
+            print(f'{key} --> {item}')
+    loss_type = config['loss']['loss_type']
+    print(f'\n\nLOSS TYPE : {loss_type.upper()}')
+    if loss_type in ('amsoftmax', 'soft_triple'):
+        for key, item in config['loss'][f'{loss_type}'].items():
+            print(f'{key} --> {item}')
+    print('\n\nDROPOUT PARAMS')
+    for key, item in config['dropout'].items():
+            print(f'{key} --> {item}')
+    print('\n\nOPTIMAIZER')
+    for key, item in config['optimizer'].items():
+            print(f'{key} --> {item}')
+    print('\n\nADDITIONAL USING PARAMETRS')
+    if config['aug']['type_aug']:
+        type_aug = config['aug']['type_aug']
+        print(f'\nAUG TYPE = {type_aug} USING')
+        for key, item in config['optimizer'].items():
+            print(f'{key} --> {item}')
+    if config['RSC']['use_rsc']:
+        print(f'RSC USING')
+        for key, item in config['RSC'].items():
+            print(f'{key} --> {item}') 
+    if config['data_parallel']['use_parallel']:
+        ids = config['data_parallel']['use_parallel']['parallel_params']['device_ids']
+        print(f'USING DATA PATALLEL ON {ids[0]} and {ids[1]} GPU')
+    if config['data']['sampler']:
+        print('USING SAMPLER')
+    if config['loss']['amsoftmax']['ratio'] != [1,1]:
+        print('USING ADAPTIVE LOSS')
 if __name__=='__main__':
     main()

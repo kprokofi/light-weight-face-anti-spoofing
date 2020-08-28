@@ -13,6 +13,7 @@ from losses import AngleSimpleLinear, SoftTripleLinear, AMSoftmaxLoss, SoftTripl
 import torch.nn as nn
 from models import mobilenetv2, mobilenetv3_large, mobilenetv3_small
 import json
+from models import Dropout
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""
@@ -159,27 +160,33 @@ def freeze_layers(model, open_layers):
             for p in module.parameters():
                 p.requires_grad = False
 
-def make_dataset(config: dict, train_transform: object = None, val_transform: object = None, mode='train'):
-    ''' make train and val datasets ''' 
-    if config['dataset'] == 'LCCFASD':
-        train =  LCFAD(root_dir=config['data']['data_root'], train=True, transform=train_transform)
-        val = LCFAD(root_dir=config['data']['data_root'], train=False, transform=val_transform)
-        test = val
-    elif config['dataset'] == 'celeba-spoof':
-        train =  CelebASpoofDataset(root_folder=config['data']['data_root'], test_mode=False, transform=train_transform)
-        val = CelebASpoofDataset(root_folder=config['data']['data_root'], test_mode=True, transform=val_transform)
-        test = val
-    elif config['dataset'] == 'Casia':
-        train = CasiaSurfDataset(protocol=1, dir=config['data']['data_root'], mode='train', transform=train_transform)
-        val = CasiaSurfDataset(protocol=1, dir=config['data']['data_root'], mode='dev', transform=val_transform)
-        test = CasiaSurfDataset(protocol=1, dir=config['data']['data_root'], mode='test', transform=val_transform)
-    elif config['dataset'] == 'multi_dataset':
-        train = MultiDataset(**config['datasets'], train=True, transform=train_transform)
-        val = MultiDataset(**config['datasets'], train=False, transform=val_transform)
-        test = val
+def make_dataset(config: dict, train_transform: object = None, val_transform: object = None, mode='train', eval_protocol='standart'):
+    ''' make train,val or test datasets '''
+    if mode == 'train': 
+        if config['dataset'] == 'LCCFASD':
+            train =  LCFAD(root_dir=config['data']['data_root'], protocol='train', transform=train_transform)
+            val = LCFAD(root_dir=config['data']['data_root'], protocol='val', transform=val_transform)
+        elif config['dataset'] == 'celeba-spoof':
+            train =  CelebASpoofDataset(root_folder=config['data']['data_root'], test_mode=False, transform=train_transform)
+            val = CelebASpoofDataset(root_folder=config['data']['data_root'], test_mode=True, transform=val_transform)
+        elif config['dataset'] == 'Casia':
+            train = CasiaSurfDataset(protocol=1, dir=config['data']['data_root'], mode='train', transform=train_transform)
+            val = CasiaSurfDataset(protocol=1, dir=config['data']['data_root'], mode='dev', transform=val_transform)
+        elif config['dataset'] == 'multi_dataset':
+            train = MultiDataset(**config['datasets'], train=True, transform=train_transform)
+            val = MultiDataset(**config['datasets'], train=False, transform=val_transform)
+        return train, val
+
     if mode == 'eval':
+        if config['test_dataset']['type'] == 'LCC_FASD' and config['dataset'] == 'celeba-spoof':
+            test = LCFAD(root_dir=config['datasets']['LCCFASD_root'], protocol='combine_all', transform=val_transform)
+        elif config['test_dataset']['type'] == 'LCC_FASD':
+            test = LCFAD(root_dir=config['datasets']['LCCFASD_root'], protocol='test', transform=val_transform)
+        elif config['test_dataset']['type'] == 'Casia':
+            test = CasiaSurfDataset(protocol=1, dir=config['datasets']['Casia_root'], mode='test', transform=val_transform)
+        elif config['test_dataset']['type'] == 'celeba-spoof':
+            test = CelebASpoofDataset(root_folder=config['datasets']['Celeba_root'], test_mode=True, transform=val_transform)
         return test
-    return train, val
 
 def make_loader(train, val, config, sampler=None):
     ''' make data loader from given train and val dataset
@@ -201,6 +208,7 @@ def build_model(config, args, strict=True):
     ''' build model and change layers depends on loss type'''
 
     if config['model']['model_type'] == 'Mobilenet2':
+        print("DROPOUT NOT EMPLEMENTED YET")
         model = mobilenetv2(prob_dropout=config['dropout']['prob_dropout'])
         if config['model']['pretrained']:
             model.load_state_dict(torch.load('pretrained/mobilenetv2_128x128-fd66a69d.pth', 
@@ -227,13 +235,20 @@ def build_model(config, args, strict=True):
     else:
         assert config['model']['model_type'] == 'Mobilenet3'
         if config['model']['model_size'] == 'large':
-            model = mobilenetv3_large(prob_dropout=config['dropout']['prob_dropout'])
+            model = mobilenetv3_large(prob_dropout=config['dropout']['prob_dropout'],
+                                    type_dropout=config['dropout']['type'],
+                                    mu=config['dropout']['mu'],
+                                    sigma=config['dropout']['sigma'])
+
             if config['model']['pretrained']:
                 model.load_state_dict(torch.load('pretrained/mobilenetv3-large-1cd25616.pth', 
                                                 map_location=f'cuda:{args.GPU}'), strict=strict)
         else:
             assert config['model']['model_size'] == 'small'
-            model = mobilenetv3_small(width_mult=.75, prob_dropout=config['dropout']['prob_dropout'])
+            model = mobilenetv3_small(width_mult=.75, prob_dropout=config['dropout']['prob_dropout'],
+                                    type_dropout=config['dropout']['type'],
+                                    mu=config['dropout']['mu'],
+                                    sigma=config['dropout']['sigma'])
             if config['model']['pretrained']:
                 model.load_state_dict(torch.load('pretrained/mobilenetv3-small-0.75-86c972c3.pth', 
                                                 map_location=f'cuda:{args.GPU}'), strict=strict)
@@ -246,12 +261,20 @@ def build_model(config, args, strict=True):
 
         if config['loss']['loss_type'] == 'amsoftmax':
             model.classifier[0] = nn.Linear(exp_size, config['model']['embeding_dim'])
-            model.classifier[1] = nn.Dropout(p=config['dropout']['classifier'])
+            # model.classifier[1] = nn.Dropout(p=config['dropout']['classifier'])
+            model.classifier[1] = Dropout(dist=config['dropout']['type'], mu=config['dropout']['mu'], 
+                                                        sigma=config['dropout']['sigma'], 
+                                                        p=config['dropout']['classifier'])
+
             model.classifier[2] = nn.BatchNorm1d(config['model']['embeding_dim'])
             model.classifier[4] = AngleSimpleLinear(config['model']['embeding_dim'], 2)
             
         elif config['loss']['loss_type'] == 'cross_entropy':
-            model.classifier[1] == nn.Dropout(p=config['dropout']['classifier'])
+            model.classifier[0] = nn.Linear(exp_size, config['model']['embeding_dim'])
+            model.classifier[1] == Dropout(dist=config['dropout']['type'], mu=config['dropout']['mu'], 
+                                                        sigma=config['dropout']['sigma'], 
+                                                        p=config['dropout']['classifier'])
+
             model.classifier[4] = nn.Linear(1280, 2)
 
         else:
@@ -315,4 +338,46 @@ def make_weights(config):
     assert len(weights) == n
     return weights
 
+def make_output(model, input, target, config):
+    ''' target - one hot
+    return output 
+    If use rsc compute output applying channel-wise rsc method'''
+    if config['RSC']['use_rsc']:
+        # making features before avg pooling
+        features = model(input)
+        if config['data_parallel']['use_parallel']:
+            model = model.module
+        # do everything after convolutions layers, strating with avg pooling
+        logits = model.make_logits(features)
+        if type(logits) == tuple:
+            logits = logits[0]
+        # take a derivative, make tensor, shape as features, but gradients insted features
+        target_logits = torch.sum(logits*target, dim=1)
+        gradients = torch.autograd.grad(target_logits, features, grad_outputs=torch.ones_like(target_logits), create_graph=True)
+        # gradients = gradients[0] * features # here the same gradients and maybe multiply them with features
+        gradients = gradients[0]
+        # get value of 1-p quatile
+        quantile = torch.tensor(np.quantile(a=gradients.data.cpu().numpy(), q=1-config['RSC']['p'], axis=(1,2,3)), device=input.device)
+        quantile = quantile.reshape(input.size(0),1,1,1)
+        # create mask
+        mask = gradients < quantile
         
+        # element wise product of features and mask, correction for expectition value 
+        new_features = (features*mask)/(1-config['RSC']['p'])
+        # compute new logits
+        new_logits = model.make_logits(new_features)
+        if type(new_logits) == tuple:
+            new_logits = new_logits[0]
+        # compute this operation batch wise
+        random_uniform = torch.rand(size=(input.size(0), 1), device=input.device)
+        random_mask = random_uniform <= config['RSC']['b']
+        output = torch.where(random_mask, new_logits, logits)
+        return output
+    else:
+        assert config['RSC']['use_rsc'] == False
+        features = model(input)
+        if config['data_parallel']['use_parallel']:
+            model = model.module
+        output = model.make_logits(features)
+        return output
+
