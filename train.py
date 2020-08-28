@@ -165,14 +165,17 @@ def train(train_loader, model, criterion, optimizer, epoch):
         elif config['loss']['loss_type'] == 'cross_entropy':
             if config['aug']['type_aug'] != None:
                 input, y_a, y_b, lam = aug_output
-                output = make_output(model, input, target, config)
+                new_target = F.one_hot(target, num_classes=2)
+                output = make_output(model, input, new_target, config)
                 loss = mixup_criterion(criterion, output, y_a, y_b, lam)
             else:
-                output = make_output(model, input, target, config)
+                new_target = F.one_hot(target, num_classes=2)
+                output = make_output(model, input, new_target, config)
                 loss = criterion(output, target)
         else:
             assert config['loss']['loss_type'] == 'soft_triple'
-            output = make_output(model, input, target, config)
+            new_target = F.one_hot(target, num_classes=2)
+            output = make_output(model, input, new_target, config)
             loss = criterion(output, target)
 
         # compute gradient and do SGD step
