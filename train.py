@@ -296,7 +296,7 @@ def init_experiment(config, path_to_config):
         for key, item in config['RSC'].items():
             print(f'{key} --> {item}') 
     if config['data_parallel']['use_parallel']:
-        ids = config['data_parallel']['use_parallel']['parallel_params']['device_ids']
+        ids = config['data_parallel']['parallel_params']['device_ids']
         print(f'USING DATA PATALLEL ON {ids[0]} and {ids[1]} GPU')
     if config['data']['sampler']:
         print('USING SAMPLER')
