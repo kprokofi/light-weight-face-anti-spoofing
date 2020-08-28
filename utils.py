@@ -308,7 +308,7 @@ def build_model(config, args, strict=True):
                                                         sigma=config['dropout']['sigma'], 
                                                         p=config['dropout']['classifier'])
             model.classifier[2] = nn.BatchNorm1d(config['model']['embeding_dim'])
-            model.classifier[4] = nn.Linear(1280, 2)
+            model.classifier[4] = nn.Linear(config['model']['embeding_dim'], 2)
 
         else:
             assert config['loss']['loss_type'] == 'soft_triple'
