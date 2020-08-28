@@ -346,9 +346,11 @@ def make_output(model, input, target, config):
         # making features before avg pooling
         features = model(input)
         if config['data_parallel']['use_parallel']:
-            model = model.module
+            model1 = model.module
+        else:
+            model1 = model
         # do everything after convolutions layers, strating with avg pooling
-        logits = model.make_logits(features)
+        logits = model1.make_logits(features)
         if type(logits) == tuple:
             logits = logits[0]
         # take a derivative, make tensor, shape as features, but gradients insted features
@@ -365,7 +367,7 @@ def make_output(model, input, target, config):
         # element wise product of features and mask, correction for expectition value 
         new_features = (features*mask)/(1-config['RSC']['p'])
         # compute new logits
-        new_logits = model.make_logits(new_features)
+        new_logits = model1.make_logits(new_features)
         if type(new_logits) == tuple:
             new_logits = new_logits[0]
         # compute this operation batch wise
@@ -377,7 +379,9 @@ def make_output(model, input, target, config):
         assert config['RSC']['use_rsc'] == False
         features = model(input)
         if config['data_parallel']['use_parallel']:
-            model = model.module
-        output = model.make_logits(features)
+            model1 = model.module
+        else:
+            model1=model
+        output = model1.make_logits(features)
         return output
 

@@ -215,8 +215,10 @@ def validate(val_loader, model, criterion):
         with torch.no_grad():
             features = model(input)
             if config['data_parallel']['use_parallel']:
-                model = model.module
-            output = model.make_logits(features)
+                model1 = model.module
+            else:
+                model1 = model
+            output = model1.make_logits(features)
             if config['loss']['loss_type'] == 'amsoftmax':
                 new_target = F.one_hot(target, num_classes=2)
                 loss = criterion(output, new_target)
@@ -302,5 +304,6 @@ def init_experiment(config, path_to_config):
         print('USING SAMPLER')
     if config['loss']['amsoftmax']['ratio'] != [1,1]:
         print('USING ADAPTIVE LOSS')
+
 if __name__=='__main__':
     main()

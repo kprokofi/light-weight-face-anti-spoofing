@@ -32,8 +32,10 @@ def evaulate(model, loader, config, args, compute_accuracy=True):
         with torch.no_grad():
             features = model(input)
             if config['data_parallel']['use_parallel']:
-                model = model.module
-            output = model.make_logits(features)
+                model1 = model.module
+            else:
+                model1 = model
+            output = model1.make_logits(features)
             if type(output)==tuple:
                 output = output[0]
             y_true = target.detach().cpu().numpy()
