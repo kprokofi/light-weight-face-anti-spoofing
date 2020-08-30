@@ -41,7 +41,7 @@ def main():
     train_transform_real = A.Compose([
                             A.Resize(**config['resize'], interpolation=cv2.INTER_CUBIC),
                             A.HorizontalFlip(p=0.5),
-                            # A.augmentations.transforms.Blur(blur_limit=3, p=0.2),
+                            A.augmentations.transforms.Blur(blur_limit=3, p=0.2),
                             A.augmentations.transforms.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, brightness_by_max=True, always_apply=False, p=0.3),
                             A.augmentations.transforms.MotionBlur(blur_limit=4, p=0.2),
                             # A.augmentations.transforms.RGBShift(p=0.2),
@@ -55,7 +55,7 @@ def main():
                             A.augmentations.transforms.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, brightness_by_max=True, always_apply=False, p=0.3),
                             # A.augmentations.transforms.RGBShift(p=0.2),
                             A.augmentations.transforms.MotionBlur(blur_limit=4, p=0.2),
-                            # A.augmentations.transforms.ISONoise(color_shift=(0.15,0.35), intensity=(0.2, 0.5), p=0.2),
+                            A.augmentations.transforms.ISONoise(color_shift=(0.15,0.35), intensity=(0.2, 0.5), p=0.2),
                             normalize,
                             ])
 
@@ -66,7 +66,7 @@ def main():
     
     # load data
     sampler = config['data']['sampler']
-    print(f'SAMPER:{sampler}')
+    print(f'SAMLPER:{sampler}')
     if sampler:
         weights = make_weights(config)
         sampler = torch.utils.data.WeightedRandomSampler(weights, 494185, replacement=True)
@@ -87,7 +87,7 @@ def main():
 
     # build optimizer and scheduler for it
     optimizer = torch.optim.SGD(model.parameters(), **config['optimizer'])
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config['epochs']['max_epoch'], eta_min=1e-6)
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, **config['scheduler'])
 
     # learning epochs
     for epoch in range(config['epochs']['start_epoch'], config['epochs']['max_epoch']):
@@ -268,7 +268,7 @@ def eval_model(model, config, transform, eval_func, file_name, map_location = 0,
     # printing results
     AUC, EER, accur, apcer, bpcer, acer, _, _ = evaulate(model, test_loader, config, args, compute_accuracy=True)
     results = f'''accuracy on test data = {round(np.mean(accur),3)}     AUC = {round(AUC,3)}     EER = {round(EER*100,2)}     apcer = {round(apcer*100,2)}     bpcer = {round(bpcer*100,2)}     acer = {round(acer*100,2)}   checkpoint made on {epoch_of_checkpoint} epoch'''  
-    with open(os.path.join(config['checkpoint']['experiment_path'], 'test.txt'), 'w') as f:
+    with open(os.path.join(config['checkpoint']['experiment_path'], file_name), 'w') as f:
         f.write(results)
 
 def init_experiment(config, path_to_config):

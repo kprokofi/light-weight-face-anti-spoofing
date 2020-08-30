@@ -7,7 +7,7 @@ import torch.nn.functional as F
 class Dropout(nn.Module):
     DISTRIBUTIONS = ['bernoulli', 'gaussian', 'none']
 
-    def __init__(self, p=0.5, mu=0.5, sigma=0.2, dist='bernoulli'):
+    def __init__(self, p=0.5, mu=0.5, sigma=0.3, dist='bernoulli'):
         super(Dropout, self).__init__()
 
         self.dist = dist
@@ -22,7 +22,7 @@ class Dropout(nn.Module):
 
     def forward(self, x):
         if self.dist == 'bernoulli':
-            out = F.dropout(x, self.p, self.training)
+            out = F.dropout2d(x, self.p, self.training)
         elif self.dist == 'gaussian':
             if self.training:
                 with torch.no_grad():

@@ -202,7 +202,7 @@ class MobileNetV3(nn.Module):
             nn.Linear(output_channel, num_classes),
         )
 
-        self._initialize_weights()
+        # self._initialize_weights()
 
     def forward(self, x):
         x = self.features(x)
@@ -280,10 +280,11 @@ def mobilenetv3_small(**kwargs):
     return MobileNetV3(cfgs, mode='small', **kwargs)
 
 def test():
-    net = mobilenetv3_large(prob_dropout=0.2)
+    net = mobilenetv3_large(prob_dropout=0.2, type_dropout='gaussian')
     x = torch.randn(10,3,128,128)
     y = net(x)
-    print(y.shape)
+    out = net.make_logits(y)
+    print(out.shape)
 
 if __name__ == '__main__':
     import torch
