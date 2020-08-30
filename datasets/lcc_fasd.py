@@ -53,20 +53,20 @@ class LCFAD(Dataset):
         return (torch.tensor(image), y_label)
 
 def get_val_img(root_dir):
-    name_of_real_img = filter(lambda x: x.endswith('.png'),
+    name_of_real_img = filter(lambda x: x.endswith('.png') or x.endswith('.jpg'),
                     os.listdir(os.path.join(root_dir, 'LCC_FASD_development/real')))
     real_img = list(map(lambda x: os.path.join('LCC_FASD_development/real', x), name_of_real_img))
-    name_of_spoof_img = filter(lambda x: x.endswith('.png'),
+    name_of_spoof_img = filter(lambda x: x.endswith('.png') or x.endswith('.jpg'),
                     os.listdir(os.path.join(root_dir, 'LCC_FASD_development/spoof')))
     spoof_img = list(map(lambda x: os.path.join('LCC_FASD_development/spoof', x), name_of_spoof_img))
     return spoof_img, real_img
 
 def get_train_img(root_dir):
-    name_of_real_img = filter(lambda x: x.endswith('.png'), 
+    name_of_real_img = filter(lambda x: x.endswith('.png') or x.endswith('.jpg'), 
                     os.listdir(os.path.join(root_dir, 'LCC_FASD_training/real')))
     real_img = list(map(lambda x: os.path.join('LCC_FASD_training/real', x), name_of_real_img))
 
-    name_of_spoof_img = filter(lambda x: x.endswith('.png'),
+    name_of_spoof_img = filter(lambda x: x.endswith('.png') or x.endswith('.jpg'),
                     os.listdir(os.path.join(root_dir, 'LCC_FASD_training/spoof')))
     spoof_img = list(map(lambda x: os.path.join('LCC_FASD_training/spoof', x), name_of_spoof_img))
     return spoof_img, real_img

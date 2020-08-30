@@ -1,5 +1,5 @@
 from torch.utils.data import Dataset
-from datasets import CelebASpoofDataset, LCFAD
+# from datasets import CelebASpoofDataset, LCFAD
 
 class MultiDataset(Dataset):
     def __init__ (self, LCCFASD_root, Celeba_root, train=True, transform=None):
