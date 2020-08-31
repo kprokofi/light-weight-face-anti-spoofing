@@ -169,9 +169,11 @@ def train(train_loader, model, criterion, optimizer, epoch):
                 output = make_output(model, input, new_target, config)
                 loss = mixup_criterion(criterion, output, y_a, y_b, lam)
             else:
-                new_target = F.one_hot(target, num_classes=2)
-                output = make_output(model, input, new_target, config)
-                loss = criterion(output, target)
+                output = model.make_logits(model(input)) # must be tuple of losses
+                loss = multi_task_criterion(output, target, config, criterion)
+                # new_target = F.one_hot(target, num_classes=2)
+                # output = make_output(model, input, new_target, config)
+                # loss = criterion(output, target)
         else:
             assert config['loss']['loss_type'] == 'soft_triple'
             new_target = F.one_hot(target, num_classes=2)
@@ -270,6 +272,21 @@ def eval_model(model, config, transform, eval_func, file_name, map_location = 0,
     results = f'''accuracy on test data = {round(np.mean(accur),3)}     AUC = {round(AUC,3)}     EER = {round(EER*100,2)}     apcer = {round(apcer*100,2)}     bpcer = {round(bpcer*100,2)}     acer = {round(acer*100,2)}   checkpoint made on {epoch_of_checkpoint} epoch'''  
     with open(os.path.join(config['checkpoint']['experiment_path'], file_name), 'w') as f:
         f.write(results)
+
+def multi_task_criterion(output: tuple, target: torch.tensor, config, criterion, C: float=1, Cf: float=0.1, Ci: float=0.01):
+    ''' output -> tuple of given losses
+    target -> torch tensor of a shape [batch*num_tasks]
+    return -> loss function '''
+
+    if config['multi_task_learning']:
+        assert target.size(1) != 1
+        spoof_loss = criterion(output[0], target[:,0].reshape(-1))
+        spoof_type_loss = criterion(output[1], target[:,1].reshape(-1))
+        lightning_loss =  criterion(output[2], target[:,2].reshape(-1))
+        loss = C*spoof_loss + Cf*spoof_type_loss + Ci*lightning_loss
+        return loss
+    else:
+        loss = criterion(output[0], target)
 
 def init_experiment(config, path_to_config):
     print(f'_______INIT EXPERIMENT {os.path.splitext(path_to_config)[0][-2:]}______')

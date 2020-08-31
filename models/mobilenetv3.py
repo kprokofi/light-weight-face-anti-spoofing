@@ -194,14 +194,27 @@ class MobileNetV3(nn.Module):
         output_channel = {'large': 1280, 'small': 1024}
         output_channel = _make_divisible(output_channel[mode] * width_mult, 8) if width_mult > 1.0 else output_channel[mode]
         # self.conv1_extra = nn.Conv2d(exp_size, 128, 1, stride=1, padding=0, bias=False)
-        self.classifier = nn.Sequential(
+        self.spoofer = nn.Sequential(
             nn.Linear(exp_size, output_channel),
             nn.Dropout(0.5),
             nn.BatchNorm1d(output_channel),
             h_swish(),
             nn.Linear(output_channel, num_classes),
         )
-
+        self.lightning = nn.Sequential(
+            nn.Linear(exp_size, output_channel),
+            nn.Dropout(0.5),
+            nn.BatchNorm1d(output_channel),
+            h_swish(),
+            nn.Linear(output_channel, num_classes),
+        )
+        self.spoof_type = nn.Sequential(
+            nn.Linear(exp_size, output_channel),
+            nn.Dropout(0.5),
+            nn.BatchNorm1d(output_channel),
+            h_swish(),
+            nn.Linear(output_channel, num_classes),
+        )
         # self._initialize_weights()
 
     def forward(self, x):
@@ -214,8 +227,10 @@ class MobileNetV3(nn.Module):
         # output = self.dw_pool(features)
         # output = self.dw_bn(output)
         output = output.view(output.size(0), -1)
-        output = self.classifier(output)
-        return output
+        spoof_out = self.spoofer(output)
+        type_spoof = self.spoof_type(output)
+        lightning_type = self.lightning(output)
+        return spoof_out, type_spoof, lightning_type
 
     def _initialize_weights(self):
         for m in self.modules():
