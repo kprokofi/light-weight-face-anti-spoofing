@@ -223,7 +223,7 @@ def validate(val_loader, model, criterion):
                 model1 = model.module
             else:
                 model1 = model
-            output = model1.make_logits(features)
+            output = model1.make_logits(features)[0]
             if config['loss']['loss_type'] == 'amsoftmax':
                 new_target = F.one_hot(target, num_classes=2)
                 loss = criterion(output, new_target)
