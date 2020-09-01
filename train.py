@@ -83,7 +83,7 @@ def main():
         model = torch.nn.DataParallel(model, **config['data_parallel']['parallel_params'])
     
     # build a criterion
-    criterion = build_criterion(config, args)
+    criterion = build_criterion(config, args).cuda(device=args.GPU)
 
     # build optimizer and scheduler for it
     optimizer = torch.optim.SGD(model.parameters(), **config['optimizer'])
@@ -139,7 +139,7 @@ def train(train_loader, model, criterion, optimizer, epoch):
     losses = AverageMeter()
     accuracy = AverageMeter()
 
-    # model to cuda, criterion to cuda
+    # # model to cuda, criterion to cuda
     criterion.cuda(device=args.GPU)
     # switch to train mode and train one epoch
     model.train()
@@ -169,8 +169,8 @@ def train(train_loader, model, criterion, optimizer, epoch):
                 output = make_output(model, input, new_target, config)
                 loss = mixup_criterion(criterion, output, y_a, y_b, lam)
             else:
-                output = model.make_logits(model(input)) # must be tuple of losses
-                loss = multi_task_criterion(output, target, config, criterion)
+                output = model.make_logits(model(input)) # must be tuple of outputs
+                loss = multi_task_criterion(output, target, config, criterion, optimizer)
                 # new_target = F.one_hot(target, num_classes=2)
                 # output = make_output(model, input, new_target, config)
                 # loss = criterion(output, target)
@@ -186,7 +186,7 @@ def train(train_loader, model, criterion, optimizer, epoch):
         optimizer.step()
 
         # measure accuracy and record loss
-        acc = precision(output, target, s=config['loss']['amsoftmax']['s'])
+        acc = precision(output[0], target[:,0].reshape(-1), s=config['loss']['amsoftmax']['s'])
         losses.update(loss.item(), input.size(0))
         accuracy.update(acc, input.size(0))
 
@@ -229,10 +229,10 @@ def validate(val_loader, model, criterion):
                 loss = criterion(output, new_target)
             else:
                 assert config['loss']['loss_type'] in ('cross_entropy', 'soft_triple')
-                loss = criterion(output, target)
+                loss = criterion(output[0], target[:, 0])
 
         # measure accuracy and record loss
-        acc = precision(output, target, s=config['loss']['amsoftmax']['s'])
+        acc = precision(output[0], target[:,0], s=config['loss']['amsoftmax']['s'])
         losses.update(loss.item(), input.size(0))
         accuracy.update(acc, input.size(0))
 
@@ -273,20 +273,30 @@ def eval_model(model, config, transform, eval_func, file_name, map_location = 0,
     with open(os.path.join(config['checkpoint']['experiment_path'], file_name), 'w') as f:
         f.write(results)
 
-def multi_task_criterion(output: tuple, target: torch.tensor, config, criterion, C: float=1, Cf: float=0.1, Ci: float=0.01):
+def multi_task_criterion(output: tuple, target: torch.tensor, config, criterion, optimizer, C: float=1, Cf: float=0.1, Ci: float=0.01):
     ''' output -> tuple of given losses
     target -> torch tensor of a shape [batch*num_tasks]
     return -> loss function '''
-
     if config['multi_task_learning']:
-        assert target.size(1) != 1
+        # spoof loss, take derivitive
         spoof_loss = criterion(output[0], target[:,0].reshape(-1))
+        optimizer.zero_grad()
+        spoof_loss.backward(retain_graph=True)
+        # spoof type loss, take derivitive
         spoof_type_loss = criterion(output[1], target[:,1].reshape(-1))
+        optimizer.zero_grad()
+        spoof_type_loss.backward(retain_graph=True)
+        # lightning loss, take derivitive
         lightning_loss =  criterion(output[2], target[:,2].reshape(-1))
+        optimizer.zero_grad()
+        lightning_loss.backward(retain_graph=True)
+        # combine losses
+        optimizer.zero_grad()
         loss = C*spoof_loss + Cf*spoof_type_loss + Ci*lightning_loss
         return loss
     else:
         loss = criterion(output[0], target)
+        loss = loss.backward()
 
 def init_experiment(config, path_to_config):
     print(f'_______INIT EXPERIMENT {os.path.splitext(path_to_config)[0][-2:]}______')
