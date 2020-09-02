@@ -86,8 +86,9 @@ def main():
         model = torch.nn.DataParallel(model, **config['data_parallel']['parallel_params'])
     
     # build a criterion
-    criterion = build_criterion(config, args).cuda(device=args.GPU)
-
+    CE = build_criterion(config, args).cuda(device=args.GPU)
+    BCE = nn.BCELoss().cuda(device=args.GPU)
+    criterion = (CE, BCE)
     # build optimizer and scheduler for it
     optimizer = torch.optim.SGD(model.parameters(), **config['optimizer'])
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, **config['scheduler'])
@@ -135,8 +136,6 @@ def train(train_loader, model, criterion, optimizer, epoch):
     losses = AverageMeter()
     accuracy = AverageMeter()
 
-    # # model to cuda, criterion to cuda
-    criterion.cuda(device=args.GPU)
     # switch to train mode and train one epoch
     model.train()
     loop = tqdm(enumerate(train_loader), total=len(train_loader), leave=False)
@@ -203,14 +202,16 @@ def validate(val_loader, model, criterion):
     batch_time = AverageMeter()
     losses = AverageMeter()
     accuracy = AverageMeter()
-
+    # multiple loss
+    if type(criterion) == tuple:
+        criterion = criterion[0]  
     # switch to evaluation mode and inference the model
     model.eval()
     loop = tqdm(enumerate(val_loader), total=len(val_loader), leave=False)
     for i, (input, target) in loop:
         if config['data']['cuda']:
             input = input.cuda(device=args.GPU)
-            if target.size(1) > 1:
+            if len(target.shape) > 1:
                 target = target[:, 0].reshape(-1).cuda(device=args.GPU)
 
         # computing output and loss
@@ -225,7 +226,7 @@ def validate(val_loader, model, criterion):
             if type(output) == tuple:
                 output = output[0]
             if config['loss']['loss_type'] == 'amsoftmax':
-                new_target = F.one_hot(target, num_classes=2)
+                new_target = F.one_hot(target, num_classes=2)  
                 loss = criterion(output, new_target)
             else:
                 assert config['loss']['loss_type'] in ('cross_entropy', 'soft_triple')
@@ -274,26 +275,34 @@ def eval_model(model, config, transform, eval_func, file_name, map_location = 0,
     with open(os.path.join(config['checkpoint']['experiment_path'], file_name), 'w') as f:
         f.write(results)
 
-def multi_task_criterion(output: tuple, target: torch.tensor, config, criterion, optimizer, C: float=1, Cf: float=0.1, Ci: float=0.01):
+def multi_task_criterion(output: tuple, target: torch.tensor, config, criterion, optimizer, C: float=1, Cs: float=0.1, Ci: float=0.01, Cf: float=1.):
     ''' output -> tuple of given losses
     target -> torch tensor of a shape [batch*num_tasks]
     return -> loss function '''
+    CE, BCE = criterion
     if config['multi_task_learning']:
         # spoof loss, take derivitive
-        spoof_loss = criterion(output[0], target[:,0].reshape(-1))
+        spoof_loss = CE(output[0], target[:,0].reshape(-1))
         optimizer.zero_grad()
         spoof_loss.backward(retain_graph=True)
         # spoof type loss, take derivitive
-        spoof_type_loss = criterion(output[1], target[:,1].reshape(-1))
+        spoof_type_loss = CE(output[1], target[:,1].reshape(-1))
         optimizer.zero_grad()
         spoof_type_loss.backward(retain_graph=True)
         # lightning loss, take derivitive
-        lightning_loss =  criterion(output[2], target[:,2].reshape(-1))
+        lightning_loss =  CE(output[2], target[:,2].reshape(-1))
         optimizer.zero_grad()
         lightning_loss.backward(retain_graph=True)
+        # real atr
+        mask = target[:,0] == 0
+        filtered_output = output[3][mask] 
+        filtered_target = target[:,3:][mask].type(torch.float32)
+        real_atr_loss = BCE(filtered_output, filtered_target)
+        optimizer.zero_grad()
+        real_atr_loss.backward(retain_graph=True)
         # combine losses
         optimizer.zero_grad()
-        loss = C*spoof_loss + Cf*spoof_type_loss + Ci*lightning_loss
+        loss = C*spoof_loss + Cs*spoof_type_loss + Ci*lightning_loss + Cf*real_atr_loss
         return loss
     else:
         loss = criterion(output[0], target)

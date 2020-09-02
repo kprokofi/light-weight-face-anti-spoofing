@@ -99,10 +99,10 @@ class SELayer(nn.Module):
         return x * y
 
 
-def conv_3x3_bn(inp, oup, stride):
+def conv_3x3_in(inp, oup, stride):
     return nn.Sequential(
         nn.Conv2d(inp, oup, 3, stride, 1, bias=False),
-        nn.BatchNorm2d(oup),
+        nn.InstanceNorm2d(oup),
         h_swish()
     )
 
@@ -170,7 +170,8 @@ class MobileNetV3(nn.Module):
 
         # building first layer
         input_channel = _make_divisible(16 * width_mult, 8)
-        layers = [conv_3x3_bn(3, input_channel, 2)]
+        self.instanorm = nn.InstanceNorm2d(3)
+        layers = [conv_3x3_in(3, input_channel, 2)]
         # building inverted residual blocks
         block = InvertedResidual
         for k, t, c, use_se, use_hs, s in self.cfgs:
@@ -215,6 +216,13 @@ class MobileNetV3(nn.Module):
             h_swish(),
             nn.Linear(output_channel, num_classes),
         )
+        self.real_atr = nn.Sequential(
+            nn.Linear(exp_size, 512),
+            nn.Dropout(0.5),
+            nn.BatchNorm1d(512),
+            h_swish(),
+            nn.Linear(512, 40),
+        )
         # self._initialize_weights()
 
     def forward(self, x):
@@ -230,7 +238,8 @@ class MobileNetV3(nn.Module):
         spoof_out = self.spoofer(output)
         type_spoof = self.spoof_type(output)
         lightning_type = self.lightning(output)
-        return spoof_out, type_spoof, lightning_type
+        real_atr = torch.sigmoid(self.real_atr(output))
+        return spoof_out, type_spoof, lightning_type, real_atr
 
     def _initialize_weights(self):
         for m in self.modules():
