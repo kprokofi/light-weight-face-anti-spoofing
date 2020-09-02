@@ -270,26 +270,26 @@ def build_model(config, args, strict=True):
             
         elif config['loss']['loss_type'] == 'cross_entropy':
             model.spoofer[0] = nn.Linear(exp_size, config['model']['embeding_dim'])
-            # model.classifier[1] = nn.Dropout(p=config['dropout']['classifier'])
-            model.spoofer[1] == Dropout(dist=config['dropout']['type'], mu=config['dropout']['mu'], 
-                                                        sigma=config['dropout']['sigma'], 
-                                                            p=config['dropout']['classifier'])
+            model.spoofer[1] = nn.Dropout(p=config['dropout']['classifier'])
+            # model.spoofer[1] == Dropout(dist=config['dropout']['type'], mu=config['dropout']['mu'], 
+            #                                             sigma=config['dropout']['sigma'], 
+            #                                                 p=config['dropout']['classifier'])
             model.spoofer[2] = nn.BatchNorm1d(config['model']['embeding_dim'])
             model.spoofer[4] = nn.Linear(config['model']['embeding_dim'], 2)
 
             model.lightning[0] = nn.Linear(exp_size, config['model']['embeding_dim'])
-            # model.classifier[1] = nn.Dropout(p=config['dropout']['classifier'])
-            model.lightning[1] == Dropout(dist=config['dropout']['type'], mu=config['dropout']['mu'], 
-                                                            sigma=config['dropout']['sigma'], 
-                                                            p=config['dropout']['classifier'])
+            model.lightning[1] = nn.Dropout(p=config['dropout']['classifier'])
+            # model.lightning[1] == Dropout(dist=config['dropout']['type'], mu=config['dropout']['mu'], 
+            #                                                 sigma=config['dropout']['sigma'], 
+            #                                                 p=config['dropout']['classifier'])
             model.lightning[2] = nn.BatchNorm1d(config['model']['embeding_dim'])
             model.lightning[4] = nn.Linear(config['model']['embeding_dim'], 5)
 
             model.spoof_type[0] = nn.Linear(exp_size, config['model']['embeding_dim'])
-            # model.classifier[1] = nn.Dropout(p=config['dropout']['classifier'])
-            model.spoof_type[1] == Dropout(dist=config['dropout']['type'], mu=config['dropout']['mu'], 
-                                                            sigma=config['dropout']['sigma'], 
-                                                            p=config['dropout']['classifier'])
+            model.spoof_type[1] = nn.Dropout(p=config['dropout']['classifier'])
+            # model.spoof_type[1] == Dropout(dist=config['dropout']['type'], mu=config['dropout']['mu'], 
+            #                                                 sigma=config['dropout']['sigma'], 
+            #                                                 p=config['dropout']['classifier'])
             model.spoof_type[2] = nn.BatchNorm1d(config['model']['embeding_dim'])
             model.spoof_type[4] = nn.Linear(config['model']['embeding_dim'], 11)
 
@@ -351,7 +351,7 @@ def make_weights(config):
             weights[int(key)] = 0.1
         else:
             assert label == 0
-            weights[int(key)] = 0.204
+            weights[int(key)] = 0.1632
 
     assert len(weights) == n
     return weights

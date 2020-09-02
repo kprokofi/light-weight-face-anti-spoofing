@@ -74,7 +74,10 @@ def main():
     val_transform = Transform(val=val_transform)
     train_dataset, val_dataset = make_dataset(config, train_transform, val_transform)
     train_loader, val_loader = make_loader(train_dataset, val_dataset, config, sampler=sampler)
-
+    test_dataset = make_dataset(config, val_transform=val_transform, mode='eval')
+    test_loader = DataLoader(dataset=test_dataset, batch_size=config['data']['batch_size'],
+                                                shuffle=True, pin_memory=config['data']['pin_memory'],
+                                                num_workers=config['data']['data_loader_workers'])
     # build model and put it to cuda and if it needed then wrap model to data parallel
     model = build_model(config, args, strict=False)
     model.cuda(args.GPU)
@@ -102,7 +105,7 @@ def main():
         accuracy = validate(val_loader, model, criterion)
 
         # remember best accuracy, AUC, EER, ACER and save checkpoint
-        if accuracy > BEST_ACCURACY and args.save_checkpoint:
+        if (epoch == 0 or epoch >=60) and accuracy > BEST_ACCURACY and args.save_checkpoint:
             AUC, EER, _ , apcer, bpcer, acer = evaulate(model, val_loader, config, args, compute_accuracy=False)
             print(f'epoch: {epoch}   AUC: {AUC}   EER: {EER}   APCER: {apcer}   BPCER: {bpcer}   ACER: {acer}')
             if acer < BEST_ACER:
@@ -115,17 +118,10 @@ def main():
             
         # evaluate on val every 10 epoch and save snapshot if better results achieved
         if ((epoch%10 == 0) or (epoch == config['epochs']['max_epoch']-1)) and args.save_checkpoint:
-            if accuracy == BEST_ACCURACY:
-                continue
-            AUC, EER, _ , apcer, bpcer, acer = evaulate(model, val_loader, config, args, compute_accuracy=False)
-            print(f'epoch: {epoch}   AUC: {AUC}   EER: {EER}   APCER: {apcer}   BPCER: {bpcer}   ACER: {acer}')
-            if acer < BEST_ACER:
-                BEST_ACER = acer
-                checkpoint = {'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch':epoch}
-                save_checkpoint(checkpoint, f'{experiment_path}/{experiment_snapshot}')
-                BEST_EER = EER
-                BEST_AUC = AUC
-        print(f'current val accuracy:  {BEST_ACCURACY}  current AUC: {BEST_AUC}  current EER: {BEST_EER} best ACER: {BEST_ACER}')
+            # printing results
+            AUC, EER, accur, apcer, bpcer, acer, _, _ = evaulate(model, test_loader, config, args, compute_accuracy=True) 
+            print(f'epoch: {epoch}  accur: {round(np.mean(accur),3)}   AUC: {AUC}   EER: {EER}   APCER: {apcer}   BPCER: {bpcer}   ACER: {acer}')
+    
     # evaulate in the end of training    
     if config['evaulation']:
         eval_model(model, config, val_transform, map_location = args.GPU, eval_func = evaulate, file_name='LCC_FASD.txt', flag=None)
@@ -214,7 +210,8 @@ def validate(val_loader, model, criterion):
     for i, (input, target) in loop:
         if config['data']['cuda']:
             input = input.cuda(device=args.GPU)
-            target = target.cuda(device=args.GPU)
+            if target.size(1) > 1:
+                target = target[:, 0].reshape(-1).cuda(device=args.GPU)
 
         # computing output and loss
         with torch.no_grad():
@@ -223,16 +220,19 @@ def validate(val_loader, model, criterion):
                 model1 = model.module
             else:
                 model1 = model
-            output = model1.make_logits(features)[0]
+            
+            output = model1.make_logits(features)
+            if type(output) == tuple:
+                output = output[0]
             if config['loss']['loss_type'] == 'amsoftmax':
                 new_target = F.one_hot(target, num_classes=2)
                 loss = criterion(output, new_target)
             else:
                 assert config['loss']['loss_type'] in ('cross_entropy', 'soft_triple')
-                loss = criterion(output[0], target[:, 0])
+                loss = criterion(output, target)
 
         # measure accuracy and record loss
-        acc = precision(output[0], target[:,0], s=config['loss']['amsoftmax']['s'])
+        acc = precision(output, target, s=config['loss']['amsoftmax']['s'])
         losses.update(loss.item(), input.size(0))
         accuracy.update(acc, input.size(0))
 
@@ -252,7 +252,7 @@ def mixup_criterion(criterion, pred, y_a, y_b, lam):
         pred = pred[0]
     return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
 
-def eval_model(model, config, transform, eval_func, file_name, map_location = 0, flag=None):
+def eval_model(model, config, transform, eval_func, file_name, map_location = 0, flag=None, save=True):
     if flag:
         config['test_dataset']['type'] = 'celeba-spoof'
 
@@ -269,7 +269,8 @@ def eval_model(model, config, transform, eval_func, file_name, map_location = 0,
                                                 num_workers=config['data']['data_loader_workers'])
     # printing results
     AUC, EER, accur, apcer, bpcer, acer, _, _ = evaulate(model, test_loader, config, args, compute_accuracy=True)
-    results = f'''accuracy on test data = {round(np.mean(accur),3)}     AUC = {round(AUC,3)}     EER = {round(EER*100,2)}     apcer = {round(apcer*100,2)}     bpcer = {round(bpcer*100,2)}     acer = {round(acer*100,2)}   checkpoint made on {epoch_of_checkpoint} epoch'''  
+    results = f'''accuracy on test data = {round(np.mean(accur),3)}     AUC = {round(AUC,3)}     EER = {round(EER*100,2)}     apcer = {round(apcer*100,2)}     bpcer = {round(bpcer*100,2)}     acer = {round(acer*100,2)}   checkpoint made on {epoch_of_checkpoint} epoch'''    
+   
     with open(os.path.join(config['checkpoint']['experiment_path'], file_name), 'w') as f:
         f.write(results)
 
