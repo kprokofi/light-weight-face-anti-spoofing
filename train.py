@@ -86,9 +86,10 @@ def main():
         model = torch.nn.DataParallel(model, **config['data_parallel']['parallel_params'])
     
     # build a criterion
-    CE = build_criterion(config, args).cuda(device=args.GPU)
+    SM = build_criterion(config, args).cuda(device=args.GPU)
+    CE = nn.CrossEntropyLoss().cuda(device=args.GPU)
     BCE = nn.BCELoss().cuda(device=args.GPU)
-    criterion = (CE, BCE)
+    criterion = (SM, CE, BCE)
     # build optimizer and scheduler for it
     optimizer = torch.optim.SGD(model.parameters(), **config['optimizer'])
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, **config['scheduler'])
@@ -145,35 +146,36 @@ def train(train_loader, model, criterion, optimizer, epoch):
             target = target.cuda(device=args.GPU)
         # compute output and loss
         if config['aug']['type_aug'] == 'mixup':
-            aug_output = mixup_target(input, target, config, args.GPU)
+            aug_output = mixup_target(input, target[:,i], config, args.GPU)
+
         if config['aug']['type_aug'] == 'cutmix':
-            aug_output = cutmix(input, target, config, args)
+            aug_output = cutmix(input, target[:,i], config, args)
+
         if config['loss']['loss_type'] == 'amsoftmax':
             if config['aug']['type_aug'] != None:
                 input, targets = aug_output
-                output = make_output(model, input, target, config)
-                loss = criterion(output, targets)
+                input, target_a, target_b, hot_target, lam = make_output(model, input, targets[:,0], config)
+                new_target = (target_a, target_b, hot_target, lam)
+                loss = multi_task_criterion(output, new_target, config, criterion, optimizer)
             else:
-                new_target = F.one_hot(target, num_classes=2)
+                new_target = F.one_hot(target[:,0], num_classes=2)
                 output = make_output(model, input, new_target, config)
-                loss = criterion(output, new_target)
+                loss = multi_task_criterion(output, target, config, criterion, optimizer)
+
         elif config['loss']['loss_type'] == 'cross_entropy':
             if config['aug']['type_aug'] != None:
                 input, y_a, y_b, lam = aug_output
-                new_target = F.one_hot(target, num_classes=2)
+                new_target = F.one_hot(target[:,0], num_classes=2)
                 output = make_output(model, input, new_target, config)
-                loss = mixup_criterion(criterion, output, y_a, y_b, lam)
+                loss = mixup_criterion(criterion, output, y_a, y_b, lam, config, optimizer)
             else:
                 output = model.make_logits(model(input)) # must be tuple of outputs
                 loss = multi_task_criterion(output, target, config, criterion, optimizer)
-                # new_target = F.one_hot(target, num_classes=2)
-                # output = make_output(model, input, new_target, config)
-                # loss = criterion(output, target)
         else:
             assert config['loss']['loss_type'] == 'soft_triple'
             new_target = F.one_hot(target, num_classes=2)
             output = make_output(model, input, new_target, config)
-            loss = criterion(output, target)
+            loss = multi_task_criterion(output, target, config, criterion, optimizer)
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
@@ -248,10 +250,10 @@ def validate(val_loader, model, criterion):
 
     return accuracy.avg
 
-def mixup_criterion(criterion, pred, y_a, y_b, lam):
+def mixup_criterion(criterion, pred, y_a, y_b, lam, config, optimizer):
     if type(pred) == tuple:
         pred = pred[0]
-    return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
+    return lam * criterion(pred, y_a, config, criterion, optimizer) + (1 - lam) * criterion(pred, y_a, config, criterion, optimizer)
 
 def eval_model(model, config, transform, eval_func, file_name, map_location = 0, flag=None, save=True):
     if flag:
@@ -279,34 +281,62 @@ def multi_task_criterion(output: tuple, target: torch.tensor, config, criterion,
     ''' output -> tuple of given losses
     target -> torch tensor of a shape [batch*num_tasks]
     return -> loss function '''
-    CE, BCE = criterion
-    if config['multi_task_learning']:
+    SM, CE, BCE = criterion
+    if config['aug']['type_aug']:
+        # filter output and tsrget for
+        if config['loss']['loss_type'] == 'amsoftmax':
+            target_a, target_b, one_hot, lam = target
+            spoof_loss = SM(output[0], one_hot)
+        else:
+            target_a, target_b, lam = target
+            spoof_loss = mixup_criterion(SM, output[0], y_a=target_a[:,0].reshape(-1), 
+                                                             y_b=target_b[:,0].reshape(-1),
+                                                             lam=lam, config=config)
+
+        spoof_type_loss = mixup_criterion(CE, output[1], y_a=target_a[:,1].reshape(-1), 
+                                                             y_b=target_b[:,1].reshape(-1),
+                                                             lam=lam, config=config)
+        lightning_loss = mixup_criterion(CE, output[2], y_a=target_a[:,2].reshape(-1), 
+                                                             y_b=target_b[:,2].reshape(-1),
+                                                             lam=lam, config=config)
+        real_atr_loss = mixup_criterion(BCE, output[3], y_a=target_a[:,3:].reshape(-1), 
+                                                             y_b=target_b[:,3:].reshape(-1),
+                                                             lam=lam, config=config)
+    else:
         # spoof loss, take derivitive
-        spoof_loss = CE(output[0], target[:,0].reshape(-1))
-        optimizer.zero_grad()
-        spoof_loss.backward(retain_graph=True)
-        # spoof type loss, take derivitive
-        spoof_type_loss = CE(output[1], target[:,1].reshape(-1))
-        optimizer.zero_grad()
-        spoof_type_loss.backward(retain_graph=True)
-        # lightning loss, take derivitive
+        if config['loss']['loss_type'] == 'amsoftmax':
+            spoof_target = F.one_hot(target[:,0], num_classes=2)
+        else:
+            spoof_target = target
+        
+        # compute losses
+        spoof_loss = SM(output[0], spoof_target)
+        spoof_type_loss =  CE(output[1], target[:,1].reshape(-1))
         lightning_loss =  CE(output[2], target[:,2].reshape(-1))
-        optimizer.zero_grad()
-        lightning_loss.backward(retain_graph=True)
-        # real atr
+        # filter output for real images and compute third loss
         mask = target[:,0] == 0
         filtered_output = output[3][mask] 
         filtered_target = target[:,3:][mask].type(torch.float32)
+
         real_atr_loss = BCE(filtered_output, filtered_target)
-        optimizer.zero_grad()
-        real_atr_loss.backward(retain_graph=True)
-        # combine losses
-        optimizer.zero_grad()
-        loss = C*spoof_loss + Cs*spoof_type_loss + Ci*lightning_loss + Cf*real_atr_loss
-        return loss
-    else:
-        loss = criterion(output[0], target)
-        loss = loss.backward()
+        
+    print(spoof_loss, spoof_type_loss, lightning_loss, real_atr_loss)
+    # taking derivitives
+    optimizer.zero_grad()
+    spoof_loss.backward(retain_graph=True)
+
+    optimizer.zero_grad()
+    spoof_type_loss.backward(retain_graph=True)
+
+    optimizer.zero_grad()
+    lightning_loss.backward(retain_graph=True)
+
+    optimizer.zero_grad()
+    real_atr_loss.backward(retain_graph=True)
+    # combine losses
+    loss = C*spoof_loss + Cs*spoof_type_loss + Ci*lightning_loss + Cf*real_atr_loss
+    exit()
+    return loss
 
 def init_experiment(config, path_to_config):
     print(f'_______INIT EXPERIMENT {os.path.splitext(path_to_config)[0][-2:]}______')

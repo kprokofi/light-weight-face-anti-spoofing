@@ -106,6 +106,12 @@ def conv_3x3_in(inp, oup, stride):
         h_swish()
     )
 
+def conv_3x3_bn(inp, oup, stride):
+    return nn.Sequential(
+        nn.Conv2d(inp, oup, 3, stride, 1, bias=False),
+        nn.BatchNorm2d(oup),
+        h_swish()
+    )
 
 def conv_1x1_bn(inp, oup):
     return nn.Sequential(
@@ -116,7 +122,7 @@ def conv_1x1_bn(inp, oup):
 
 
 class InvertedResidual(nn.Module):
-    def __init__(self, inp, hidden_dim, oup, kernel_size, stride, use_se, use_hs, prob_dropout, type_dropout, sigma, mu):
+    def __init__(self, inp, hidden_dim, oup, kernel_size, stride, use_se, use_hs, prob_dropout, type_dropout, sigma, mu, theta):
         super(InvertedResidual, self).__init__()
         assert stride in [1, 2]
         self.identity = stride == 1 and inp == oup
@@ -158,7 +164,9 @@ class InvertedResidual(nn.Module):
 
 
 class MobileNetV3(nn.Module):
-    def __init__(self, cfgs, mode, prob_dropout, type_dropout,  mu=0.5, sigma=0.3, num_classes=1000, width_mult=1.):
+    def __init__(self, cfgs, mode, prob_dropout, type_dropout, prob_dropout_linear=0.5, 
+                                                                embeding_dim=1280, mu=0.5, sigma=0.3, 
+                                                                num_classes=1000, width_mult=1., theta=0):
         super(MobileNetV3, self).__init__()
         # setting of inverted residual blocks
         self.cfgs = cfgs
@@ -166,12 +174,13 @@ class MobileNetV3(nn.Module):
         self.type_dropout = type_dropout
         self.mu = mu
         self.sigma = sigma
+        self.theta = theta
         assert mode in ['large', 'small']
 
         # building first layer
         input_channel = _make_divisible(16 * width_mult, 8)
-        self.instanorm = nn.InstanceNorm2d(3)
-        layers = [conv_3x3_in(3, input_channel, 2)]
+        # self.instanorm = nn.InstanceNorm2d(3)
+        layers = [conv_3x3_bn(3, input_channel, 2)]
         # building inverted residual blocks
         block = InvertedResidual
         for k, t, c, use_se, use_hs, s in self.cfgs:
@@ -181,7 +190,8 @@ class MobileNetV3(nn.Module):
                                                                 prob_dropout=self.prob_dropout,
                                                                 mu=self.mu,
                                                                 sigma=self.sigma,
-                                                                type_dropout=self.type_dropout))
+                                                                type_dropout=self.type_dropout,
+                                                                theta = self.theta))
             input_channel = output_channel
         self.features = nn.Sequential(*layers)
         # building last several layers
@@ -190,38 +200,36 @@ class MobileNetV3(nn.Module):
         # self.dw_pool = nn.Conv2d(exp_size, exp_size, k_size,
         #                          groups=exp_size, bias=False)
         # self.dw_bn = nn.BatchNorm2d(exp_size)
-
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        output_channel = {'large': 1280, 'small': 1024}
-        output_channel = _make_divisible(output_channel[mode] * width_mult, 8) if width_mult > 1.0 else output_channel[mode]
         # self.conv1_extra = nn.Conv2d(exp_size, 128, 1, stride=1, padding=0, bias=False)
+        # bulding heads for multi task
         self.spoofer = nn.Sequential(
-            nn.Linear(exp_size, output_channel),
-            nn.Dropout(0.5),
-            nn.BatchNorm1d(output_channel),
+            nn.Linear(exp_size, embeding_dim),
+            nn.Dropout(prob_dropout_linear),
+            nn.BatchNorm1d(embeding_dim),
             h_swish(),
-            nn.Linear(output_channel, num_classes),
+            nn.Linear(embeding_dim, 2),
         )
         self.lightning = nn.Sequential(
-            nn.Linear(exp_size, output_channel),
-            nn.Dropout(0.5),
-            nn.BatchNorm1d(output_channel),
+            nn.Linear(exp_size, embeding_dim),
+            nn.Dropout(prob_dropout_linear),
+            nn.BatchNorm1d(embeding_dim),
             h_swish(),
-            nn.Linear(output_channel, num_classes),
+            nn.Linear(embeding_dim, 5),
         )
         self.spoof_type = nn.Sequential(
-            nn.Linear(exp_size, output_channel),
-            nn.Dropout(0.5),
-            nn.BatchNorm1d(output_channel),
+            nn.Linear(exp_size, embeding_dim),
+            nn.Dropout(prob_dropout_linear),
+            nn.BatchNorm1d(embeding_dim),
             h_swish(),
-            nn.Linear(output_channel, num_classes),
+            nn.Linear(embeding_dim, 11),
         )
         self.real_atr = nn.Sequential(
-            nn.Linear(exp_size, 512),
-            nn.Dropout(0.5),
-            nn.BatchNorm1d(512),
+            nn.Linear(exp_size, embeding_dim),
+            nn.Dropout(prob_dropout_linear),
+            nn.BatchNorm1d(embeding_dim),
             h_swish(),
-            nn.Linear(512, 40),
+            nn.Linear(embeding_dim, 40),
         )
         # self._initialize_weights()
 
@@ -240,6 +248,12 @@ class MobileNetV3(nn.Module):
         lightning_type = self.lightning(output)
         real_atr = torch.sigmoid(self.real_atr(output))
         return spoof_out, type_spoof, lightning_type, real_atr
+
+    def spoof_task(self, features):
+        output = self.avgpool(features)
+        output = output.view(output.size(0), -1)
+        spoof_out = self.spoofer(output)
+        return spoof_out
 
     def _initialize_weights(self):
         for m in self.modules():
@@ -280,7 +294,6 @@ def mobilenetv3_large(**kwargs):
         [5,   6, 160, 1, 1, 1]
     ]
     return MobileNetV3(cfgs, mode='large', **kwargs)
-
 
 def mobilenetv3_small(**kwargs):
     """

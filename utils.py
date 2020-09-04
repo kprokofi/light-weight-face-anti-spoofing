@@ -77,12 +77,13 @@ def mixup_target(input, target, config, cuda, num_classes=2):
     # compute mix-up augmentation
     input, target_a, target_b, lam = mixup_data(input, target, config['aug']['alpha'], config['aug']['beta'], cuda)
     input, target_a, target_b = map(Variable, (input, target_a, target_b))
-    # compute new target
-    target_a_hot = F.one_hot(target_a, num_classes)
-    target_b_hot = F.one_hot(target_b, num_classes)
-    new_target = lam*target_a_hot + (1-lam)*target_b_hot
     if config['loss']['loss_type'] == 'amsoftmax':
-        return input, new_target
+        # compute new target
+        target_a_hot = F.one_hot(target_a[:,0], num_classes)
+        target_b_hot = F.one_hot(target_b[:,0], num_classes)
+        new_target = lam*target_a_hot + (1-lam)*target_b_hot
+
+        return input, target_a[:,1:], target_b[:,1:], new_target, lam
     else:
         assert config['loss']['loss_type'] == 'cross_entropy'
         return input, target_a, target_b, lam
@@ -222,7 +223,6 @@ def build_model(config, args, strict=True):
                     )
             model.classifier = AngleSimpleLinear(config['model']['embeding_dim'], 2)
 
-
         elif config['loss']['loss_type'] == 'soft_triple':
             model.conv = nn.Sequential(
                         nn.Conv2d(320, config['model']['embeding_dim'], 1, 1, 0, bias=False),
@@ -237,70 +237,34 @@ def build_model(config, args, strict=True):
             model = mobilenetv3_large(prob_dropout=config['dropout']['prob_dropout'],
                                     type_dropout=config['dropout']['type'],
                                     mu=config['dropout']['mu'],
-                                    sigma=config['dropout']['sigma'])
+                                    sigma=config['dropout']['sigma'],
+                                    embeding_dim=config['model']['embeding_dim'],
+                                    prob_dropout_linear = config['dropout']['classifier'],
+                                    theta=config['conv_cd']['theta'])
 
             if config['model']['pretrained']:
                 model.load_state_dict(torch.load('pretrained/mobilenetv3-large-1cd25616.pth', 
                                                 map_location=f'cuda:{args.GPU}'), strict=strict)
         else:
             assert config['model']['model_size'] == 'small'
-            model = mobilenetv3_small(width_mult=.75, prob_dropout=config['dropout']['prob_dropout'],
+            model = mobilenetv3_small(prob_dropout=config['dropout']['prob_dropout'],
                                     type_dropout=config['dropout']['type'],
                                     mu=config['dropout']['mu'],
-                                    sigma=config['dropout']['sigma'])
+                                    sigma=config['dropout']['sigma'],
+                                    embeding_dim=config['model']['embeding_dim'],
+                                    prob_dropout_linear = config['dropout']['classifier'])
+
             if config['model']['pretrained']:
                 model.load_state_dict(torch.load('pretrained/mobilenetv3-small-0.75-86c972c3.pth', 
                                                 map_location=f'cuda:{args.GPU}'), strict=strict)
 
-        if config['model']['model_size'] == 'small':
-            exp_size = 432
-        else:
-            assert config['model']['model_size'] == 'large'
-            exp_size = 960
-
         if config['loss']['loss_type'] == 'amsoftmax':
-            model.classifier[0] = nn.Linear(exp_size, config['model']['embeding_dim'])
-            # model.classifier[1] = nn.Dropout(p=config['dropout']['classifier'])
-            model.classifier[1] = Dropout(dist=config['dropout']['type'], mu=config['dropout']['mu'], 
-                                                        sigma=config['dropout']['sigma'], 
-                                                        p=config['dropout']['classifier'])
-
-            model.classifier[2] = nn.BatchNorm1d(config['model']['embeding_dim'])
-            model.classifier[4] = AngleSimpleLinear(config['model']['embeding_dim'], 2)
-            
-        elif config['loss']['loss_type'] == 'cross_entropy':
-            model.spoofer[0] = nn.Linear(exp_size, config['model']['embeding_dim'])
-            model.spoofer[1] = nn.Dropout(p=config['dropout']['classifier'])
-            # model.spoofer[1] == Dropout(dist=config['dropout']['type'], mu=config['dropout']['mu'], 
-            #                                             sigma=config['dropout']['sigma'], 
-            #                                                 p=config['dropout']['classifier'])
-            model.spoofer[2] = nn.BatchNorm1d(config['model']['embeding_dim'])
-            model.spoofer[4] = nn.Linear(config['model']['embeding_dim'], 2)
-
-            model.lightning[0] = nn.Linear(exp_size, config['model']['embeding_dim'])
-            model.lightning[1] = nn.Dropout(p=config['dropout']['classifier'])
-            # model.lightning[1] == Dropout(dist=config['dropout']['type'], mu=config['dropout']['mu'], 
-            #                                                 sigma=config['dropout']['sigma'], 
-            #                                                 p=config['dropout']['classifier'])
-            model.lightning[2] = nn.BatchNorm1d(config['model']['embeding_dim'])
-            model.lightning[4] = nn.Linear(config['model']['embeding_dim'], 5)
-
-            model.spoof_type[0] = nn.Linear(exp_size, config['model']['embeding_dim'])
-            model.spoof_type[1] = nn.Dropout(p=config['dropout']['classifier'])
-            # model.spoof_type[1] == Dropout(dist=config['dropout']['type'], mu=config['dropout']['mu'], 
-            #                                                 sigma=config['dropout']['sigma'], 
-            #                                                 p=config['dropout']['classifier'])
-            model.spoof_type[2] = nn.BatchNorm1d(config['model']['embeding_dim'])
-            model.spoof_type[4] = nn.Linear(config['model']['embeding_dim'], 11)
-
-
+            model.spoofer[4] = AngleSimpleLinear(config['model']['embeding_dim'], 2)
 
         else:
             assert config['loss']['loss_type'] == 'soft_triple'
-            model.classifier[0] = nn.Linear(exp_size, config['model']['embeding_dim'])
-            model.classifier[1] = nn.Dropout(p=config['dropout']['classifier'])
-            model.classifier[2] = nn.BatchNorm1d(config['model']['embeding_dim'])
-            model.classifier[4] = SoftTripleLinear(config['model']['embeding_dim'], 2, num_proxies=config['loss']['soft_triple']['K'])
+            model.spoofer[4] = SoftTripleLinear(config['model']['embeding_dim'], 2, num_proxies=config['loss']['soft_triple']['K'])
+
     return model
 
 def build_criterion(config, args):
@@ -357,9 +321,10 @@ def make_weights(config):
     return weights
 
 def make_output(model, input, target, config):
-    ''' target - one hot
+    ''' target - one hot for main task
     return output 
     If use rsc compute output applying channel-wise rsc method'''
+    assert target.shape[1] == 2
     if config['RSC']['use_rsc']:
         # making features before avg pooling
         features = model(input)
@@ -368,7 +333,8 @@ def make_output(model, input, target, config):
         else:
             model1 = model
         # do everything after convolutions layers, strating with avg pooling
-        logits = model1.make_logits(features)
+        all_tasks_output = model1.make_logits(features)
+        logits = all_tasks_output[0]
         if type(logits) == tuple:
             logits = logits[0]
         # take a derivative, make tensor, shape as features, but gradients insted features
@@ -384,13 +350,14 @@ def make_output(model, input, target, config):
         # element wise product of features and mask, correction for expectition value 
         new_features = (features*mask)/(1-config['RSC']['p'])
         # compute new logits
-        new_logits = model1.make_logits(new_features)
+        new_logits = model1.spoof_task(new_features)
         if type(new_logits) == tuple:
             new_logits = new_logits[0]
         # compute this operation batch wise
         random_uniform = torch.rand(size=(input.size(0), 1), device=input.device)
         random_mask = random_uniform <= config['RSC']['b']
         output = torch.where(random_mask, new_logits, logits)
+        output = (output, *all_tasks_output[1:])
         return output
     else:
         assert config['RSC']['use_rsc'] == False
