@@ -79,11 +79,12 @@ def mixup_target(input, target, config, cuda, num_classes=2):
     input, target_a, target_b = map(Variable, (input, target_a, target_b))
     if config['loss']['loss_type'] == 'amsoftmax':
         # compute new target
-        target_a_hot = F.one_hot(target_a[:,0], num_classes)
-        target_b_hot = F.one_hot(target_b[:,0], num_classes)
+        print(target_a)
+        target_a_hot = F.one_hot(target_a[:,0].reshape(-1), num_classes)
+        target_b_hot = F.one_hot(target_b[:,0].reshape(-1), num_classes)
         new_target = lam*target_a_hot + (1-lam)*target_b_hot
 
-        return input, target_a[:,1:], target_b[:,1:], new_target, lam
+        return input, target_a, target_b, new_target, lam
     else:
         assert config['loss']['loss_type'] == 'cross_entropy'
         return input, target_a, target_b, lam
@@ -261,8 +262,7 @@ def build_model(config, args, strict=True):
         if config['loss']['loss_type'] == 'amsoftmax':
             model.spoofer[4] = AngleSimpleLinear(config['model']['embeding_dim'], 2)
 
-        else:
-            assert config['loss']['loss_type'] == 'soft_triple'
+        elif config['loss']['loss_type'] == 'soft_triple':
             model.spoofer[4] = SoftTripleLinear(config['model']['embeding_dim'], 2, num_proxies=config['loss']['soft_triple']['K'])
 
     return model
@@ -338,6 +338,10 @@ def make_output(model, input, target, config):
         if type(logits) == tuple:
             logits = logits[0]
         # take a derivative, make tensor, shape as features, but gradients insted features
+        if config['aug']['type_aug']:
+            fold_target = target.argmax(dim=1)
+            target = F.one_hot(fold_target, num_classes=target.shape[1]) 
+
         target_logits = torch.sum(logits*target, dim=1)
         gradients = torch.autograd.grad(target_logits, features, grad_outputs=torch.ones_like(target_logits), create_graph=True)[0]
         # gradients = gradients[0] * features # here the same gradients and maybe multiply them with features

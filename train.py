@@ -146,15 +146,15 @@ def train(train_loader, model, criterion, optimizer, epoch):
             target = target.cuda(device=args.GPU)
         # compute output and loss
         if config['aug']['type_aug'] == 'mixup':
-            aug_output = mixup_target(input, target[:,i], config, args.GPU)
+            aug_output = mixup_target(input, target, config, args.GPU)
 
         if config['aug']['type_aug'] == 'cutmix':
             aug_output = cutmix(input, target[:,i], config, args)
 
         if config['loss']['loss_type'] == 'amsoftmax':
             if config['aug']['type_aug'] != None:
-                input, targets = aug_output
-                input, target_a, target_b, hot_target, lam = make_output(model, input, targets[:,0], config)
+                input, target_a, target_b, hot_target, lam = aug_output
+                output = make_output(model, input, hot_target, config)
                 new_target = (target_a, target_b, hot_target, lam)
                 loss = multi_task_criterion(output, new_target, config, criterion, optimizer)
             else:
@@ -169,7 +169,8 @@ def train(train_loader, model, criterion, optimizer, epoch):
                 output = make_output(model, input, new_target, config)
                 loss = mixup_criterion(criterion, output, y_a, y_b, lam, config, optimizer)
             else:
-                output = model.make_logits(model(input)) # must be tuple of outputs
+                new_target = F.one_hot(target[:,0], num_classes=2)
+                output = make_output(model, input, new_target, config) # must be tuple of outputs
                 loss = multi_task_criterion(output, target, config, criterion, optimizer)
         else:
             assert config['loss']['loss_type'] == 'soft_triple'
@@ -250,10 +251,11 @@ def validate(val_loader, model, criterion):
 
     return accuracy.avg
 
-def mixup_criterion(criterion, pred, y_a, y_b, lam, config, optimizer):
+def mixup_criterion(criterion, pred, y_a, y_b, lam, config):
     if type(pred) == tuple:
         pred = pred[0]
-    return lam * criterion(pred, y_a, config, criterion, optimizer) + (1 - lam) * criterion(pred, y_a, config, criterion, optimizer)
+    print(pred.shape, y_a.shape)
+    return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
 
 def eval_model(model, config, transform, eval_func, file_name, map_location = 0, flag=None, save=True):
     if flag:
@@ -293,26 +295,31 @@ def multi_task_criterion(output: tuple, target: torch.tensor, config, criterion,
                                                              y_b=target_b[:,0].reshape(-1),
                                                              lam=lam, config=config)
 
-        spoof_type_loss = mixup_criterion(CE, output[1], y_a=target_a[:,1].reshape(-1), 
-                                                             y_b=target_b[:,1].reshape(-1),
+        spoof_type_loss = mixup_criterion(CE, output[1], y_a=target_a[:,1], 
+                                                             y_b=target_b[:,1],
                                                              lam=lam, config=config)
-        lightning_loss = mixup_criterion(CE, output[2], y_a=target_a[:,2].reshape(-1), 
-                                                             y_b=target_b[:,2].reshape(-1),
+        lightning_loss = mixup_criterion(CE, output[2], y_a=target_a[:,2], 
+                                                             y_b=target_b[:,2],
                                                              lam=lam, config=config)
-        real_atr_loss = mixup_criterion(BCE, output[3], y_a=target_a[:,3:].reshape(-1), 
-                                                             y_b=target_b[:,3:].reshape(-1),
+        real_atr_loss = mixup_criterion(BCE, output[3], y_a=target_a[:,3:].type(torch.float32), 
+                                                             y_b=target_b[:,3:].type(torch.float32),
                                                              lam=lam, config=config)
     else:
         # spoof loss, take derivitive
         if config['loss']['loss_type'] == 'amsoftmax':
             spoof_target = F.one_hot(target[:,0], num_classes=2)
         else:
-            spoof_target = target
+            spoof_target = target[:,0]
         
         # compute losses
+        mask = target[:,0] == 1
+        filtered_output_type = output[1]
+        filtered_target_type = target[:,1]
+        filtered_output_lightning = output[2]
+        filtered_target_lightning = target[:,2]
         spoof_loss = SM(output[0], spoof_target)
-        spoof_type_loss =  CE(output[1], target[:,1].reshape(-1))
-        lightning_loss =  CE(output[2], target[:,2].reshape(-1))
+        spoof_type_loss =  CE(filtered_output_type, filtered_target_type)
+        lightning_loss =  CE(filtered_output_lightning, filtered_target_lightning)
         # filter output for real images and compute third loss
         mask = target[:,0] == 0
         filtered_output = output[3][mask] 
@@ -320,7 +327,6 @@ def multi_task_criterion(output: tuple, target: torch.tensor, config, criterion,
 
         real_atr_loss = BCE(filtered_output, filtered_target)
         
-    print(spoof_loss, spoof_type_loss, lightning_loss, real_atr_loss)
     # taking derivitives
     optimizer.zero_grad()
     spoof_loss.backward(retain_graph=True)
@@ -335,7 +341,6 @@ def multi_task_criterion(output: tuple, target: torch.tensor, config, criterion,
     real_atr_loss.backward(retain_graph=True)
     # combine losses
     loss = C*spoof_loss + Cs*spoof_type_loss + Ci*lightning_loss + Cf*real_atr_loss
-    exit()
     return loss
 
 def init_experiment(config, path_to_config):
