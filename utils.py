@@ -244,8 +244,14 @@ def build_model(config, args, strict=True):
                                     theta=config['conv_cd']['theta'])
 
             if config['model']['pretrained']:
-                model.load_state_dict(torch.load('pretrained/mobilenetv3-large-1cd25616.pth', 
-                                                map_location=f'cuda:{args.GPU}'), strict=strict)
+                checkpoint = torch.load('pretrained/mobilenetv3-large-1cd25616.pth', map_location=f'cuda:{args.GPU}')
+                for key in list(checkpoint):
+                    # if key.startswith('0.1.bias') or key.endswith('0.1.running_mean') or key.endswith('0.1.running_var'):
+                    if key.startswith('conv.'):
+                        print(key)
+                        del checkpoint[key]
+
+                model.load_state_dict(checkpoint, strict=strict)
         else:
             assert config['model']['model_size'] == 'small'
             model = mobilenetv3_small(prob_dropout=config['dropout']['prob_dropout'],

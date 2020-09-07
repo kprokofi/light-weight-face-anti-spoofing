@@ -9,6 +9,27 @@ import torch.nn as nn
 import math
 import torch.nn.functional as F
 
+class Conv2d_cd(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size=3, stride=1,
+                 padding=1, dilation=1, groups=1, bias=False, theta=0.7):
+
+        super(Conv2d_cd, self).__init__() 
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding, dilation=dilation, groups=groups, bias=bias)
+        self.theta = theta
+
+    def forward(self, x):
+        out_normal = self.conv(x)
+
+        if math.fabs(self.theta - 0.0) < 1e-8:
+            return out_normal 
+        else:
+            #pdb.set_trace()
+            [C_out,C_in, kernel_size,kernel_size] = self.conv.weight.shape
+            kernel_diff = self.conv.weight.sum(2).sum(2)
+            kernel_diff = kernel_diff[:, :, None, None]
+            out_diff = F.conv2d(input=x, weight=kernel_diff, bias=self.conv.bias, stride=self.conv.stride, padding=0, groups=self.conv.groups)
+
+            return out_normal - self.theta * out_diff
 
 class Dropout(nn.Module):
     DISTRIBUTIONS = ['bernoulli', 'gaussian', 'none']
@@ -99,27 +120,26 @@ class SELayer(nn.Module):
         return x * y
 
 
-def conv_3x3_in(inp, oup, stride):
+def conv_3x3_in(inp, oup, stride, theta):
     return nn.Sequential(
-        nn.Conv2d(inp, oup, 3, stride, 1, bias=False),
+        Conv2d_cd(inp, oup, 3, stride, 1, bias=False, theta=theta),
         nn.InstanceNorm2d(oup),
         h_swish()
     )
 
-def conv_3x3_bn(inp, oup, stride):
+def conv_3x3_bn(inp, oup, stride, theta):
     return nn.Sequential(
-        nn.Conv2d(inp, oup, 3, stride, 1, bias=False),
+        Conv2d_cd(inp, oup, 3, stride, 1, bias=False, theta=theta),
         nn.BatchNorm2d(oup),
         h_swish()
     )
 
-def conv_1x1_bn(inp, oup):
+def conv_1x1_bn(inp, oup, theta):
     return nn.Sequential(
-        nn.Conv2d(inp, oup, 1, 1, 0, bias=False),
+        Conv2d_cd(inp, oup, 1, 1, 0, bias=False, theta=theta),
         nn.BatchNorm2d(oup),
         h_swish()
     )
-
 
 class InvertedResidual(nn.Module):
     def __init__(self, inp, hidden_dim, oup, kernel_size, stride, use_se, use_hs, prob_dropout, type_dropout, sigma, mu, theta):
@@ -130,29 +150,29 @@ class InvertedResidual(nn.Module):
         if inp == hidden_dim:
             self.conv = nn.Sequential(
                 # dw
-                nn.Conv2d(hidden_dim, hidden_dim, kernel_size, stride, (kernel_size - 1) // 2, groups=hidden_dim, bias=False),
+                Conv2d_cd(hidden_dim, hidden_dim, kernel_size, stride, (kernel_size - 1) // 2, groups=hidden_dim, bias=False, theta=theta),
                 nn.BatchNorm2d(hidden_dim),
                 h_swish() if use_hs else nn.ReLU(inplace=True),
                 # Squeeze-and-Excite
                 SELayer(hidden_dim) if use_se else nn.Identity(),
                 # pw-linear
-                nn.Conv2d(hidden_dim, oup, 1, 1, 0, bias=False),
+                Conv2d_cd(hidden_dim, oup, 1, 1, 0, bias=False, theta=theta),
                 nn.BatchNorm2d(oup),
             )
         else:
             self.conv = nn.Sequential(
                 # pw
-                nn.Conv2d(inp, hidden_dim, 1, 1, 0, bias=False),
+                Conv2d_cd(inp, hidden_dim, 1, 1, 0, bias=False, theta=theta),
                 nn.BatchNorm2d(hidden_dim),
                 h_swish() if use_hs else nn.ReLU(inplace=True),
                 # dw
-                nn.Conv2d(hidden_dim, hidden_dim, kernel_size, stride, (kernel_size - 1) // 2, groups=hidden_dim, bias=False),
+                Conv2d_cd(hidden_dim, hidden_dim, kernel_size, stride, (kernel_size - 1) // 2, groups=hidden_dim, bias=False, theta=theta),
                 nn.BatchNorm2d(hidden_dim),
                 # Squeeze-and-Excite
                 SELayer(hidden_dim) if use_se else nn.Identity(),
                 h_swish() if use_hs else nn.ReLU(inplace=True),
                 # pw-linear
-                nn.Conv2d(hidden_dim, oup, 1, 1, 0, bias=False),
+                Conv2d_cd(hidden_dim, oup, 1, 1, 0, bias=False, theta=theta),
                 nn.BatchNorm2d(oup),
             )
 
@@ -180,7 +200,7 @@ class MobileNetV3(nn.Module):
         # building first layer
         input_channel = _make_divisible(16 * width_mult, 8)
         # self.instanorm = nn.InstanceNorm2d(3)
-        layers = [conv_3x3_bn(3, input_channel, 2)]
+        layers = [conv_3x3_bn(3, input_channel, 2, theta=self.theta)]
         # building inverted residual blocks
         block = InvertedResidual
         for k, t, c, use_se, use_hs, s in self.cfgs:
@@ -195,37 +215,37 @@ class MobileNetV3(nn.Module):
             input_channel = output_channel
         self.features = nn.Sequential(*layers)
         # building last several layers
-        self.conv = conv_1x1_bn(input_channel, exp_size)
+        self.conv = conv_1x1_bn(input_channel, embeding_dim, theta=self.theta)
         # k_size = (128 // 32, 128 // 32)
         # self.dw_pool = nn.Conv2d(exp_size, exp_size, k_size,
         #                          groups=exp_size, bias=False)
         # self.dw_bn = nn.BatchNorm2d(exp_size)
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        # self.conv1_extra = nn.Conv2d(exp_size, 128, 1, stride=1, padding=0, bias=False)
+
         # bulding heads for multi task
         self.spoofer = nn.Sequential(
-            nn.Linear(exp_size, embeding_dim),
+            # nn.Linear(exp_size, embeding_dim),
             nn.Dropout(prob_dropout_linear),
             nn.BatchNorm1d(embeding_dim),
             h_swish(),
             nn.Linear(embeding_dim, 2),
         )
         self.lightning = nn.Sequential(
-            nn.Linear(exp_size, embeding_dim),
+            # nn.Linear(exp_size, embeding_dim),
             nn.Dropout(prob_dropout_linear),
             nn.BatchNorm1d(embeding_dim),
             h_swish(),
             nn.Linear(embeding_dim, 5),
         )
         self.spoof_type = nn.Sequential(
-            nn.Linear(exp_size, embeding_dim),
+            # nn.Linear(exp_size, embeding_dim),
             nn.Dropout(prob_dropout_linear),
             nn.BatchNorm1d(embeding_dim),
             h_swish(),
             nn.Linear(embeding_dim, 11),
         )
         self.real_atr = nn.Sequential(
-            nn.Linear(exp_size, embeding_dim),
+            # nn.Linear(exp_size, embeding_dim),
             nn.Dropout(prob_dropout_linear),
             nn.BatchNorm1d(embeding_dim),
             h_swish(),
@@ -234,6 +254,7 @@ class MobileNetV3(nn.Module):
         # self._initialize_weights()
 
     def forward(self, x):
+        # x = self.instanorm(x)
         x = self.features(x)
         x = self.conv(x)
         return x

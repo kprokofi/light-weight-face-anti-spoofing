@@ -132,8 +132,6 @@ def main():
 def train(train_loader, model, criterion, optimizer, epoch):
     global STEP, args, config
     # meters
-    batch_time = AverageMeter()
-    data_time = AverageMeter()
     losses = AverageMeter()
     accuracy = AverageMeter()
 
@@ -202,7 +200,6 @@ def train(train_loader, model, criterion, optimizer, epoch):
 def validate(val_loader, model, criterion):
     global args, VAL_STEP, config
     # meters
-    batch_time = AverageMeter()
     losses = AverageMeter()
     accuracy = AverageMeter()
     # multiple loss
@@ -305,6 +302,7 @@ def multi_task_criterion(output: tuple, target: torch.tensor, config, criterion,
                                                              y_b=target_b[:,3:].type(torch.float32),
                                                              lam=lam, config=config)
     else:
+
         # spoof loss, take derivitive
         if config['loss']['loss_type'] == 'amsoftmax':
             spoof_target = F.one_hot(target[:,0], num_classes=2)
@@ -312,19 +310,14 @@ def multi_task_criterion(output: tuple, target: torch.tensor, config, criterion,
             spoof_target = target[:,0]
         
         # compute losses
-        mask = target[:,0] == 1
-        filtered_output_type = output[1]
-        filtered_target_type = target[:,1]
-        filtered_output_lightning = output[2]
-        filtered_target_lightning = target[:,2]
         spoof_loss = SM(output[0], spoof_target)
-        spoof_type_loss =  CE(filtered_output_type, filtered_target_type)
-        lightning_loss =  CE(filtered_output_lightning, filtered_target_lightning)
+        spoof_type_loss =  CE(output[1], target[:,1])
+        lightning_loss =  CE(output[2], target[:,2])
+
         # filter output for real images and compute third loss
         mask = target[:,0] == 0
         filtered_output = output[3][mask] 
         filtered_target = target[:,3:][mask].type(torch.float32)
-
         real_atr_loss = BCE(filtered_output, filtered_target)
         
     # taking derivitives
