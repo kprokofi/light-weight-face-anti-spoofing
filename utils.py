@@ -246,7 +246,9 @@ def build_model(config, args, strict=True):
             if config['model']['pretrained']:
                 checkpoint = torch.load('pretrained/mobilenetv3-large-1cd25616.pth', map_location=f'cuda:{args.GPU}')
                 for key in list(checkpoint):
-                    # if key.startswith('0.1.bias') or key.endswith('0.1.running_mean') or key.endswith('0.1.running_var'):
+                    if key.endswith('0.1.bias') or key.endswith('0.1.running_mean') or key.endswith('0.1.running_var'):
+                        print(key)
+                        del checkpoint[key]
                     if key.startswith('conv.'):
                         print(key)
                         del checkpoint[key]

@@ -11,7 +11,7 @@ import torch.nn.functional as F
 
 class Conv2d_cd(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size=3, stride=1,
-                 padding=1, dilation=1, groups=1, bias=False, theta=0.7):
+                 padding=1, dilation=1, groups=1, bias=False, theta=0):
 
         super(Conv2d_cd, self).__init__() 
         self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding, dilation=dilation, groups=groups, bias=bias)
@@ -122,21 +122,21 @@ class SELayer(nn.Module):
 
 def conv_3x3_in(inp, oup, stride, theta):
     return nn.Sequential(
-        Conv2d_cd(inp, oup, 3, stride, 1, bias=False, theta=theta),
+        nn.Conv2d(inp, oup, 3, stride, 1, bias=False),
         nn.InstanceNorm2d(oup),
         h_swish()
     )
 
 def conv_3x3_bn(inp, oup, stride, theta):
     return nn.Sequential(
-        Conv2d_cd(inp, oup, 3, stride, 1, bias=False, theta=theta),
+        nn.Conv2d(inp, oup, 3, stride, 1, bias=False),
         nn.BatchNorm2d(oup),
         h_swish()
     )
 
 def conv_1x1_bn(inp, oup, theta):
     return nn.Sequential(
-        Conv2d_cd(inp, oup, 1, 1, 0, bias=False, theta=theta),
+        nn.Conv2d(inp, oup, 1, 1, 0, bias=False),
         nn.BatchNorm2d(oup),
         h_swish()
     )
@@ -150,29 +150,29 @@ class InvertedResidual(nn.Module):
         if inp == hidden_dim:
             self.conv = nn.Sequential(
                 # dw
-                Conv2d_cd(hidden_dim, hidden_dim, kernel_size, stride, (kernel_size - 1) // 2, groups=hidden_dim, bias=False, theta=theta),
+                nn.Conv2d(hidden_dim, hidden_dim, kernel_size, stride, (kernel_size - 1) // 2, groups=hidden_dim, bias=False),
                 nn.BatchNorm2d(hidden_dim),
                 h_swish() if use_hs else nn.ReLU(inplace=True),
                 # Squeeze-and-Excite
                 SELayer(hidden_dim) if use_se else nn.Identity(),
                 # pw-linear
-                Conv2d_cd(hidden_dim, oup, 1, 1, 0, bias=False, theta=theta),
+                nn.Conv2d(hidden_dim, oup, 1, 1, 0, bias=False),
                 nn.BatchNorm2d(oup),
             )
         else:
             self.conv = nn.Sequential(
                 # pw
-                Conv2d_cd(inp, hidden_dim, 1, 1, 0, bias=False, theta=theta),
+                nn.Conv2d(inp, hidden_dim, 1, 1, 0, bias=False),
                 nn.BatchNorm2d(hidden_dim),
                 h_swish() if use_hs else nn.ReLU(inplace=True),
                 # dw
-                Conv2d_cd(hidden_dim, hidden_dim, kernel_size, stride, (kernel_size - 1) // 2, groups=hidden_dim, bias=False, theta=theta),
+                nn.Conv2d(hidden_dim, hidden_dim, kernel_size, stride, (kernel_size - 1) // 2, groups=hidden_dim, bias=False),
                 nn.BatchNorm2d(hidden_dim),
                 # Squeeze-and-Excite
                 SELayer(hidden_dim) if use_se else nn.Identity(),
                 h_swish() if use_hs else nn.ReLU(inplace=True),
                 # pw-linear
-                Conv2d_cd(hidden_dim, oup, 1, 1, 0, bias=False, theta=theta),
+                nn.Conv2d(hidden_dim, oup, 1, 1, 0, bias=False),
                 nn.BatchNorm2d(oup),
             )
 
@@ -199,8 +199,8 @@ class MobileNetV3(nn.Module):
 
         # building first layer
         input_channel = _make_divisible(16 * width_mult, 8)
-        # self.instanorm = nn.InstanceNorm2d(3)
-        layers = [conv_3x3_bn(3, input_channel, 2, theta=self.theta)]
+        self.instanorm = nn.InstanceNorm2d(3)
+        layers = [conv_3x3_in(3, input_channel, 2, theta=self.theta)]
         # building inverted residual blocks
         block = InvertedResidual
         for k, t, c, use_se, use_hs, s in self.cfgs:
@@ -215,7 +215,7 @@ class MobileNetV3(nn.Module):
             input_channel = output_channel
         self.features = nn.Sequential(*layers)
         # building last several layers
-        self.conv = conv_1x1_bn(input_channel, embeding_dim, theta=self.theta)
+        self.conv = conv_1x1_bn(input_channel, exp_size, theta=self.theta)
         # k_size = (128 // 32, 128 // 32)
         # self.dw_pool = nn.Conv2d(exp_size, exp_size, k_size,
         #                          groups=exp_size, bias=False)
@@ -224,28 +224,28 @@ class MobileNetV3(nn.Module):
 
         # bulding heads for multi task
         self.spoofer = nn.Sequential(
-            # nn.Linear(exp_size, embeding_dim),
+            nn.Linear(exp_size, embeding_dim),
             nn.Dropout(prob_dropout_linear),
             nn.BatchNorm1d(embeding_dim),
             h_swish(),
             nn.Linear(embeding_dim, 2),
         )
         self.lightning = nn.Sequential(
-            # nn.Linear(exp_size, embeding_dim),
+            nn.Linear(exp_size, embeding_dim),
             nn.Dropout(prob_dropout_linear),
             nn.BatchNorm1d(embeding_dim),
             h_swish(),
             nn.Linear(embeding_dim, 5),
         )
         self.spoof_type = nn.Sequential(
-            # nn.Linear(exp_size, embeding_dim),
+            nn.Linear(exp_size, embeding_dim),
             nn.Dropout(prob_dropout_linear),
             nn.BatchNorm1d(embeding_dim),
             h_swish(),
             nn.Linear(embeding_dim, 11),
         )
         self.real_atr = nn.Sequential(
-            # nn.Linear(exp_size, embeding_dim),
+            nn.Linear(exp_size, embeding_dim),
             nn.Dropout(prob_dropout_linear),
             nn.BatchNorm1d(embeding_dim),
             h_swish(),
@@ -254,7 +254,7 @@ class MobileNetV3(nn.Module):
         # self._initialize_weights()
 
     def forward(self, x):
-        # x = self.instanorm(x)
+        x = self.instanorm(x)
         x = self.features(x)
         x = self.conv(x)
         return x

@@ -117,13 +117,15 @@ def main():
                 BEST_ACCURACY = accuracy
                 BEST_EER = EER
                 BEST_AUC = AUC
-            
+
         # evaluate on val every 10 epoch and save snapshot if better results achieved
         if ((epoch%10 == 0) or (epoch == config['epochs']['max_epoch']-1)) and args.save_checkpoint:
             # printing results
             AUC, EER, accur, apcer, bpcer, acer, _, _ = evaulate(model, test_loader, config, args, compute_accuracy=True) 
             print(f'epoch: {epoch}  accur: {round(np.mean(accur),3)}   AUC: {AUC}   EER: {EER}   APCER: {apcer}   BPCER: {bpcer}   ACER: {acer}')
-    
+            checkpoint = {'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch':epoch}
+            save_checkpoint(checkpoint, f'{experiment_path}/{experiment_snapshot}')
+            
     # evaulate in the end of training    
     if config['evaulation']:
         eval_model(model, config, val_transform, map_location = args.GPU, eval_func = evaulate, file_name='LCC_FASD.txt', flag=None)
