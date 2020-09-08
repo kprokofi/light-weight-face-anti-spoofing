@@ -9,7 +9,7 @@ import numpy as np
 import matplotlib.pyplot as plt 
 
 class CelebASpoofDataset(Dataset):
-    def __init__(self, root_folder, test_mode=False, transform=None, test_dataset=False):
+    def __init__(self, root_folder, test_mode=False, transform=None, test_dataset=False, multi_learning=True):
         self.root_folder = root_folder
         if test_mode:
             list_path = os.path.join(root_folder, 'metas/intra_test/items_test.json')
@@ -21,6 +21,7 @@ class CelebASpoofDataset(Dataset):
 
         self.transform = transform
         self.test_dataset = test_dataset
+        self.multi_learning = multi_learning
 
     def __len__(self):
         return len(self.data)
@@ -46,12 +47,18 @@ class CelebASpoofDataset(Dataset):
             # test_img = cv.resize(cropped_face, (128,128))
             # plt.imsave(f'/home/prokofiev/pytorch/antispoofing/images/{path[-9:]}', arr = test_img, format='png')
             return path, label, cropped_face.shape
-
-        label = int(data_item['labels'][43])
+        if self.multi_learning:
+            labels = data_item['labels']
+            label = int(labels[43])
+            real_labels = tuple(map(int, labels[0:40]))
+            labels = [label, int(labels[40]), int(labels[41]), *real_labels]
+        else:
+            labels = int(data_item['labels'][43])
+            label = labels
         if self.transform:
             cropped_face = self.transform(label=label, img=cropped_face)['image']
         cropped_face = np.transpose(cropped_face, (2, 0, 1)).astype(np.float32)
-        return (torch.tensor(cropped_face), torch.tensor(int(data_item['labels'][43]), dtype=torch.long)) #see readme of the CelebA-Spoof to get layout of labels
+        return (torch.tensor(cropped_face), torch.tensor(labels, dtype=torch.long)) #see readme of the CelebA-Spoof to get layout of labels
 
 def clamp(x, min_x, max_x):
     return min(max(x, min_x), max_x)
