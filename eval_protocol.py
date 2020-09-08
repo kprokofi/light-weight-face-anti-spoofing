@@ -27,7 +27,8 @@ def evaulate(model, loader, config, args, compute_accuracy=True):
     tp, tn, fp, fn = 0, 0, 0, 0
     for input, target in tqdm(loader):
         input = input.cuda(device=args.GPU)
-        target = target.cuda(device=args.GPU)
+        if len(target.shape) > 1:
+            target = target[:, 0].reshape(-1).cuda(device=args.GPU)
         # target = 1 - target
         with torch.no_grad():
             features = model(input)
@@ -35,9 +36,10 @@ def evaulate(model, loader, config, args, compute_accuracy=True):
                 model1 = model.module
             else:
                 model1 = model
-            output = model1.make_logits(features)
+            output = model1.spoof_task(features)
             if type(output)==tuple:
                 output = output[0]
+
             y_true = target.detach().cpu().numpy()
             y_pred = output.argmax(dim=1).detach().cpu().numpy()
             tn_batch, fp_batch, fn_batch, tp_batch = metrics.confusion_matrix(y_true=y_true, 
