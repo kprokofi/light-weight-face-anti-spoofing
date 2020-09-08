@@ -249,9 +249,9 @@ def build_model(config, args, strict=True):
                     if key.endswith('0.1.bias') or key.endswith('0.1.running_mean') or key.endswith('0.1.running_var'):
                         print(key)
                         del checkpoint[key]
-                    if key.startswith('conv.'):
-                        print(key)
-                        del checkpoint[key]
+                    # if key.startswith('conv.'):
+                    #     print(key)
+                    #     del checkpoint[key]
 
                 model.load_state_dict(checkpoint, strict=strict)
         else:
