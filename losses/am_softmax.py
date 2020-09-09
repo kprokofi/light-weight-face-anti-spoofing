@@ -33,7 +33,7 @@ def label_smoothing(classes, y_hot, smoothing=0.1, dim=-1):
 
 class AMSoftmaxLoss(nn.Module):
     """Computes the AM-Softmax loss with cos or arc margin"""
-    margin_types = ['cos', 'arc', 'adacos']
+    margin_types = ['cos', 'arc', 'adacos', 'cross_entropy']
     def __init__(self, margin_type='cos', device=0, num_classes=2, label_smooth=False, smoothing=0.1, ratio=[1,2.04], gamma=0., m=0.5, s=30, t=1.):
         ''' label smoothing - flag whether or not to use label smoothing '''
         super(AMSoftmaxLoss, self).__init__()
@@ -46,11 +46,13 @@ class AMSoftmaxLoss(nn.Module):
         assert s > 0
         if self.margin_type in ['arc','cos',]:
             self.s = s
-        else:
-            assert self.margin_type == 'adacos'
+        elif self.margin_type == 'adacos':
             self.s = math.sqrt(2) * math.log(num_classes - 1)
             if self.s <= 1:
                 self.s = 15
+        else:
+            assert self.margin_type == 'cross_entropy'
+            self.s = 1
         # self.cos_m = math.cos(m)
         # self.sin_m = math.sin(m)
         # self.th = math.cos(math.pi - m)
@@ -66,38 +68,39 @@ class AMSoftmaxLoss(nn.Module):
         self.classes = target.size(1)
         if self.label_smooth:
             target = label_smoothing(classes=self.classes, y_hot=target, smoothing=self.smoothing)
-        # fold one_hot to one vector [batch size] (need to do it when label smooth or augmentations used)
-        fold_target = target.argmax(dim=1)
-        # unfold it to one-hot()
-        one_hot_target = F.one_hot(fold_target, num_classes=self.classes)
-        m = self.m * one_hot_target
-        if self.margin_type == 'cos':
-            phi_theta = cos_theta - m
-            output = phi_theta
-        elif self.margin_type == 'arc':
-            theta = torch.acos(cos_theta)
-            phi_theta = torch.cos(theta + self.m)
-            output = phi_theta
-            # phi_theta = torch.where(cos_theta > self.th, phi_theta, cos_theta - self.sin_m * self.m)
+        if self.margin_type in ('cos', 'arc', 'adacos'):
+            # fold one_hot to one vector [batch size] (need to do it when label smooth or augmentations used)
+            fold_target = target.argmax(dim=1)
+            # unfold it to one-hot()
+            one_hot_target = F.one_hot(fold_target, num_classes=self.classes)
+            m = self.m * one_hot_target
+            if self.margin_type == 'cos':
+                phi_theta = cos_theta - m
+                output = phi_theta
+            elif self.margin_type == 'arc':
+                theta = torch.acos(cos_theta)
+                phi_theta = torch.cos(theta + self.m)
+                output = phi_theta
+                # phi_theta = torch.where(cos_theta > self.th, phi_theta, cos_theta - self.sin_m * self.m)
+            elif self.margin_type == 'adacos':
+                # compute outpute for adacos margin
+                zero = torch.tensor(0.).to(cos_theta.device)
+                phi_theta = torch.where(one_hot_target.bool(), torch.acos(cos_theta), zero)
+                # phi_theta = torch.cos(phi_theta + self.m)
+                # one_hot = torch.zeros_like(cos_theta)
+                # one_hot.scatter_(1, fold_target.view(-1, 1).long(), 1)
+                with torch.no_grad():
+                    # compute adaptive rescaling parameter
+                    B_avg = torch.where(one_hot_target < 1, torch.exp(self.s * cos_theta), zero)
+                    B_avg = torch.sum(B_avg) / cos_theta.size(0)
+                    # print(B_avg)
+                    theta_med = torch.median(torch.sum(phi_theta, dim=1)).item()
+                    theta_med = min(math.pi / 4., theta_med)
+                    self.s = torch.log(B_avg) / math.cos(theta_med)
+                    output = cos_theta
         else:
-            assert self.margin_type == 'adacos'
-            # compute outpute for adacos margin
-            zero = torch.tensor(0.).to(cos_theta.device)
-            phi_theta = torch.where(one_hot_target.bool(), torch.acos(cos_theta), zero)
-            # phi_theta = torch.cos(phi_theta + self.m)
-            # one_hot = torch.zeros_like(cos_theta)
-            # one_hot.scatter_(1, fold_target.view(-1, 1).long(), 1)
-            with torch.no_grad():
-                # compute adaptive rescaling parameter
-                B_avg = torch.where(one_hot_target < 1, torch.exp(self.s * cos_theta), zero)
-                B_avg = torch.sum(B_avg) / cos_theta.size(0)
-                # print(B_avg)
-                theta_med = torch.median(torch.sum(phi_theta, dim=1)).item()
-                theta_med = min(math.pi / 4., theta_med)
-                print(self.s)
-                self.s = torch.log(B_avg) / math.cos(theta_med)
-                print(self.s)
-                output = cos_theta
+            assert self.margin_type == 'cross_entropy'
+            output = cos_theta
 
         if self.gamma == 0 and self.t == 1.:
             pred = F.log_softmax(self.s*output, dim=-1)

@@ -45,8 +45,12 @@ class SoftTripleLoss(nn.Module):
                 self.weight[i*K+j, i*K+j+1:(i+1)*K] = 1
 
     def forward(self, input, target):
+        ''' target - one hot '''
+        # fold one_hot to one vector [batch size] (need to do it when label smooth or augmentations used)
+        fold_target = target.argmax(dim=1)
         simClass, simCenter = input
-        lossClassify = F.cross_entropy(self.s * (simClass - F.one_hot(target, simClass.shape[1]) * self.m), target)
+        pred = F.log_softmax(self.s * (simClass - F.one_hot(fold_target, simClass.shape[1]) * self.m), dim=-1)
+        lossClassify = torch.mean(torch.sum(-target * pred, dim=-1))
 
         if self.tau > 0 and self.K > 1:
             reg = torch.sum(torch.sqrt(2.0 + 1e-5 - 2.*simCenter[self.weight])) / (self.cN * self.K * (self.K - 1.))

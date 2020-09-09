@@ -16,9 +16,13 @@ class Conv2d_cd(nn.Module):
         super(Conv2d_cd, self).__init__() 
         self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding, dilation=dilation, groups=groups, bias=bias)
         self.theta = theta
+        self.i = 0
 
     def forward(self, x):
         out_normal = self.conv(x)
+        if self.training:
+            self.theta = 7e-9*self.i
+            self.i +=1
 
         if math.fabs(self.theta - 0.0) < 1e-8:
             return out_normal 
@@ -119,7 +123,6 @@ class SELayer(nn.Module):
         y = self.fc(y).view(b, c, 1, 1)
         return x * y
 
-
 def conv_3x3_in(inp, oup, stride, theta):
     return nn.Sequential(
         nn.Conv2d(inp, oup, 3, stride, 1, bias=False),
@@ -141,6 +144,12 @@ def conv_1x1_bn(inp, oup, theta):
         h_swish()
     )
 
+def conv_1x1_in(inp, oup, theta):
+    return nn.Sequential(
+        nn.Conv2d(inp, oup, 1, 1, 0, bias=False),
+        nn.InstanceNorm2d(oup),
+        h_swish()
+    )
 class InvertedResidual(nn.Module):
     def __init__(self, inp, hidden_dim, oup, kernel_size, stride, use_se, use_hs, prob_dropout, type_dropout, sigma, mu, theta):
         super(InvertedResidual, self).__init__()
@@ -215,7 +224,7 @@ class MobileNetV3(nn.Module):
             input_channel = output_channel
         self.features = nn.Sequential(*layers)
         # building last several layers
-        self.conv = conv_1x1_bn(input_channel, exp_size, theta=self.theta)
+        self.conv = conv_1x1_bn(input_channel, embeding_dim, theta=self.theta)
         # k_size = (128 // 32, 128 // 32)
         # self.dw_pool = nn.Conv2d(exp_size, exp_size, k_size,
         #                          groups=exp_size, bias=False)
@@ -224,28 +233,28 @@ class MobileNetV3(nn.Module):
 
         # bulding heads for multi task
         self.spoofer = nn.Sequential(
-            nn.Linear(exp_size, embeding_dim),
+            # nn.Linear(exp_size, embeding_dim),
             nn.Dropout(prob_dropout_linear),
             nn.BatchNorm1d(embeding_dim),
             h_swish(),
             nn.Linear(embeding_dim, 2),
         )
         self.lightning = nn.Sequential(
-            nn.Linear(exp_size, embeding_dim),
+            # nn.Linear(exp_size, embeding_dim),
             nn.Dropout(prob_dropout_linear),
             nn.BatchNorm1d(embeding_dim),
             h_swish(),
             nn.Linear(embeding_dim, 5),
         )
         self.spoof_type = nn.Sequential(
-            nn.Linear(exp_size, embeding_dim),
+            # nn.Linear(exp_size, embeding_dim),
             nn.Dropout(prob_dropout_linear),
             nn.BatchNorm1d(embeding_dim),
             h_swish(),
             nn.Linear(embeding_dim, 11),
         )
         self.real_atr = nn.Sequential(
-            nn.Linear(exp_size, embeding_dim),
+            # nn.Linear(exp_size, embeding_dim),
             nn.Dropout(prob_dropout_linear),
             nn.BatchNorm1d(embeding_dim),
             h_swish(),
@@ -291,6 +300,9 @@ class MobileNetV3(nn.Module):
                 m.weight.data.normal_(0, 0.01)
                 m.bias.data.zero_()
 
+    def set_theta(self, theta):
+        # for module in self.modules():
+        print(self.features[1].conv[0])
 
 def mobilenetv3_large(**kwargs):
     """
@@ -338,11 +350,14 @@ def mobilenetv3_small(**kwargs):
     return MobileNetV3(cfgs, mode='small', **kwargs)
 
 def test():
-    net = mobilenetv3_large(prob_dropout=0.2, type_dropout='gaussian')
-    x = torch.randn(10,3,128,128)
-    y = net(x)
-    out = net.make_logits(y)
-    print(out.shape)
+    model = mobilenetv3_large(prob_dropout=0.2, type_dropout='gaussian')
+    for i in range(10):
+        model.train()
+        x = torch.randn(10,3,128,128)
+        y = model(x)
+        out = model.make_logits(y)
+    # print(len(out))
+    # model.set_theta(0.2)
 
 if __name__ == '__main__':
     import torch

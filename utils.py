@@ -77,17 +77,7 @@ def mixup_target(input, target, config, cuda, num_classes=2):
     # compute mix-up augmentation
     input, target_a, target_b, lam = mixup_data(input, target, config['aug']['alpha'], config['aug']['beta'], cuda)
     input, target_a, target_b = map(Variable, (input, target_a, target_b))
-    if config['loss']['loss_type'] == 'amsoftmax':
-        # compute new target
-        print(target_a)
-        target_a_hot = F.one_hot(target_a[:,0].reshape(-1), num_classes)
-        target_b_hot = F.one_hot(target_b[:,0].reshape(-1), num_classes)
-        new_target = lam*target_a_hot + (1-lam)*target_b_hot
-
-        return input, target_a, target_b, new_target, lam
-    else:
-        assert config['loss']['loss_type'] == 'cross_entropy'
-        return input, target_a, target_b, lam
+    return input, target_a, target_b, lam
 
 def mixup_data(x, y, alpha=1.0, beta=1.0, cuda=0):
     '''Returns mixed inputs, pairs of targets, and lambda'''
@@ -113,21 +103,10 @@ def cutmix(input, target, config, args, num_classes=2):
         input[:, :, bbx1:bbx2, bby1:bby2] = input[rand_index, :, bbx1:bbx2, bby1:bby2]
         # adjust lambda to exactly match pixel ratio
         lam = 1 - ((bbx2 - bbx1) * (bby2 - bby1) / (input.size()[-1] * input.size()[-2]))
-        if config['loss']['loss_type'] in ('cross_enropy', 'soft_triple'):
-            target_a = target
-            target_b = target[rand_index]
-            return input, target_a, target_b, lam
-        assert config['loss']['loss_type'] == 'amsoftmax'
-        # get one hot target vectors 
-        target_a2 = F.one_hot(target, num_classes=num_classes) 
-        target_b2 = F.one_hot(target, num_classes=num_classes)[rand_index]
-        # do merging classes (cutmix)
-        new_target = lam*target_a2 + (1.0 - lam)*target_b2
-        return input, new_target
-    if config['loss']['loss_type'] == 'amsoftmax':        
-        target = F.one_hot(target, num_classes=2)
-        return input, target
-    assert config['loss']['loss_type'] == 'cross_entropy'
+        target_a = target
+        target_b = target[rand_index]
+        return input, target_a, target_b, lam
+
     return input, target, target, 0
 
 
@@ -150,7 +129,6 @@ def rand_bbox(size, lam):
     return bbx1, bby1, bbx2, bby2
 
 def freeze_layers(model, open_layers):
-
     for name, module in model.named_children():
         if name in open_layers:
             module.train()
@@ -209,29 +187,29 @@ def build_model(config, args, strict=True):
     ''' build model and change layers depends on loss type'''
 
     if config['model']['model_type'] == 'Mobilenet2':
-        print("DROPOUT NOT EMPLEMENTED YET")
-        model = mobilenetv2(prob_dropout=config['dropout']['prob_dropout'])
-        if config['model']['pretrained']:
-            model.load_state_dict(torch.load('pretrained/mobilenetv2_128x128-fd66a69d.pth', 
-                                                map_location=f'cuda:{args.GPU}'), strict=strict)
+        raise NotImplementedError
+        # model = mobilenetv2(prob_dropout=config['dropout']['prob_dropout'])
+        # if config['model']['pretrained']:
+        #     model.load_state_dict(torch.load('pretrained/mobilenetv2_128x128-fd66a69d.pth', 
+        #                                         map_location=f'cuda:{args.GPU}'), strict=strict)
         
-        if config['loss']['loss_type'] == 'amsoftmax':
-            model.conv = nn.Sequential(
-                        nn.Conv2d(320, config['model']['embeding_dim'], 1, 1, 0, bias=False),
-                        nn.Dropout(p=config['dropout']['classifier']),
-                        nn.BatchNorm2d(config['model']['embeding_dim']),
-                        nn.PReLU()
-                    )
-            model.classifier = AngleSimpleLinear(config['model']['embeding_dim'], 2)
+        # if config['loss']['loss_type'] == 'amsoftmax':
+        #     model.conv = nn.Sequential(
+        #                 nn.Conv2d(320, config['model']['embeding_dim'], 1, 1, 0, bias=False),
+        #                 nn.Dropout(p=config['dropout']['classifier']),
+        #                 nn.BatchNorm2d(config['model']['embeding_dim']),
+        #                 nn.PReLU()
+        #             )
+        #     model.classifier = AngleSimpleLinear(config['model']['embeding_dim'], 2)
 
-        elif config['loss']['loss_type'] == 'soft_triple':
-            model.conv = nn.Sequential(
-                        nn.Conv2d(320, config['model']['embeding_dim'], 1, 1, 0, bias=False),
-                        nn.Dropout(p=config['dropout']['classifier']),
-                        nn.BatchNorm2d(config['model']['embeding_dim']),
-                        nn.PReLU()
-                    )
-            model.classifier = SoftTripleLinear(config['model']['embeding_dim'], 2, num_proxies=config['loss']['soft_triple']['K'])
+        # elif config['loss']['loss_type'] == 'soft_triple':
+        #     model.conv = nn.Sequential(
+        #                 nn.Conv2d(320, config['model']['embeding_dim'], 1, 1, 0, bias=False),
+        #                 nn.Dropout(p=config['dropout']['classifier']),
+        #                 nn.BatchNorm2d(config['model']['embeding_dim']),
+        #                 nn.PReLU()
+        #             )
+        #     model.classifier = SoftTripleLinear(config['model']['embeding_dim'], 2, num_proxies=config['loss']['soft_triple']['K'])
     else:
         assert config['model']['model_type'] == 'Mobilenet3'
         if config['model']['model_size'] == 'large':
@@ -245,13 +223,11 @@ def build_model(config, args, strict=True):
 
             if config['model']['pretrained']:
                 checkpoint = torch.load('pretrained/mobilenetv3-large-1cd25616.pth', map_location=f'cuda:{args.GPU}')
+                print('key in checkpoint were deleted:')
                 for key in list(checkpoint):
-                    if key.endswith('0.1.bias') or key.endswith('0.1.running_mean') or key.endswith('0.1.running_var'):
+                    if key.endswith('0.1.running_mean') or key.endswith('0.1.running_var') or key.startswith('conv.'):
                         print(key)
                         del checkpoint[key]
-                    # if key.startswith('conv.'):
-                    #     print(key)
-                    #     del checkpoint[key]
 
                 model.load_state_dict(checkpoint, strict=strict)
         else:
@@ -267,21 +243,26 @@ def build_model(config, args, strict=True):
                 model.load_state_dict(torch.load('pretrained/mobilenetv3-small-0.75-86c972c3.pth', 
                                                 map_location=f'cuda:{args.GPU}'), strict=strict)
 
-        if config['loss']['loss_type'] == 'amsoftmax':
-            model.spoofer[4] = AngleSimpleLinear(config['model']['embeding_dim'], 2)
+        if (config['loss']['loss_type'] == 'amsoftmax') and (config['loss']['amsoftmax']['margin_type'] != 'cross_entropy'):
+            model.spoofer[3] = AngleSimpleLinear(config['model']['embeding_dim'], 2)
 
         elif config['loss']['loss_type'] == 'soft_triple':
-            model.spoofer[4] = SoftTripleLinear(config['model']['embeding_dim'], 2, num_proxies=config['loss']['soft_triple']['K'])
+            model.spoofer[3] = SoftTripleLinear(config['model']['embeding_dim'], 2, num_proxies=config['loss']['soft_triple']['K'])
 
     return model
 
-def build_criterion(config, args):
-    if config['loss']['loss_type'] == 'amsoftmax':
-        criterion = AMSoftmaxLoss(**config['loss']['amsoftmax'], device=args.GPU)
-    elif config['loss']['loss_type'] == 'soft_triple':
-        criterion = SoftTripleLoss(**config['loss']['soft_triple'])
+def build_criterion(config, args, task='main'):
+    if task == 'main':
+        if config['loss']['loss_type'] == 'amsoftmax':
+            criterion = AMSoftmaxLoss(**config['loss']['amsoftmax'], device=args.GPU)
+        elif config['loss']['loss_type'] == 'soft_triple':
+            criterion = SoftTripleLoss(**config['loss']['soft_triple'])
     else:
-        criterion = nn.CrossEntropyLoss()
+        assert task == 'rest'
+        criterion = AMSoftmaxLoss(margin_type='cross_entropy', 
+                                  label_smooth=config['loss']['amsoftmax']['label_smooth'],
+                                  smoothing=config['loss']['amsoftmax']['smoothing'], 
+                                  device=args.GPU)
     return criterion
 
 class Transform():
@@ -369,6 +350,8 @@ def make_output(model, input, target, config):
         random_uniform = torch.rand(size=(input.size(0), 1), device=input.device)
         random_mask = random_uniform <= config['RSC']['b']
         output = torch.where(random_mask, new_logits, logits)
+        if config['loss']['loss_type'] == 'soft_triple':
+            output =  (output, all_tasks_output[0][1])
         output = (output, *all_tasks_output[1:])
         return output
     else:
