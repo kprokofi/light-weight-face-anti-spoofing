@@ -58,9 +58,11 @@ def save_checkpoint(state, filename="my_model.pth.tar"):
     print('==> saving checkpoint')
     torch.save(state, filename)
 
-def load_checkpoint(checkpoint, net, optimizer, load_optimizer=False):
+def load_checkpoint(checkpoint, net, optimizer=None, load_optimizer=False, strict=False):
     print("==> Loading checkpoint")
-    net.load_state_dict(checkpoint['state_dict'])
+    missing_keys, unexpected_keys = net.load_state_dict(checkpoint, strict=strict)
+    if missing_keys or unexpected_keys:
+        print(f'WARNING, NEXT KEYS HAVE NOT BEEN LOADED:\n\nmissing keys:{missing_keys}\n\nunexpected keys:{unexpected_keys}')
     if load_optimizer:
         optimizer.load_state_dict(checkpoint['optimizer'])
 
@@ -228,8 +230,7 @@ def build_model(config, args, strict=True):
                     if key.endswith('0.1.running_mean') or key.endswith('0.1.running_var') or key.startswith('conv.'):
                         print(key)
                         del checkpoint[key]
-
-                model.load_state_dict(checkpoint, strict=strict)
+                load_checkpoint(checkpoint, model, strict=strict)
         else:
             assert config['model']['model_size'] == 'small'
             model = mobilenetv3_small(prob_dropout=config['dropout']['prob_dropout'],

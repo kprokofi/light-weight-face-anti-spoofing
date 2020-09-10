@@ -40,22 +40,22 @@ def main():
     normalize = A.Normalize(**config['img_norm_cfg'])
     train_transform_real = A.Compose([
                             A.Resize(**config['resize'], interpolation=cv2.INTER_CUBIC),
-                            A.HorizontalFlip(p=0.5),
-                            A.augmentations.transforms.Blur(blur_limit=3, p=0.2),
-                            A.augmentations.transforms.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, brightness_by_max=True, always_apply=False, p=0.3),
-                            A.augmentations.transforms.MotionBlur(blur_limit=4, p=0.2),
-                            # A.augmentations.transforms.RGBShift(p=0.2),
-                            A.augmentations.transforms.ISONoise(color_shift=(0.15,0.35), intensity=(0.2, 0.5)),
+                            # A.HorizontalFlip(p=0.5),
+                            # A.augmentations.transforms.Blur(blur_limit=3, p=0.2),
+                            # A.augmentations.transforms.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, brightness_by_max=True, always_apply=False, p=0.3),
+                            # A.augmentations.transforms.MotionBlur(blur_limit=4, p=0.2),
+                            # # A.augmentations.transforms.RGBShift(p=0.2),
+                            # A.augmentations.transforms.ISONoise(color_shift=(0.15,0.35), intensity=(0.2, 0.5)),
                             normalize,
                             ])
 
     train_transform_spoof = A.Compose([
                             A.Resize(**config['resize'], interpolation=cv2.INTER_CUBIC),
-                            A.HorizontalFlip(p=0.5),
-                            A.augmentations.transforms.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, brightness_by_max=True, always_apply=False, p=0.3),
+                            # A.HorizontalFlip(p=0.5),
+                            # A.augmentations.transforms.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, brightness_by_max=True, always_apply=False, p=0.3),
                             # A.augmentations.transforms.RGBShift(p=0.2),
-                            A.augmentations.transforms.MotionBlur(blur_limit=4, p=0.2),
-                            A.augmentations.transforms.ISONoise(color_shift=(0.15,0.35), intensity=(0.2, 0.5), p=0.2),
+                            # A.augmentations.transforms.MotionBlur(blur_limit=4, p=0.2),
+                            # A.augmentations.transforms.ISONoise(color_shift=(0.15,0.35), intensity=(0.2, 0.5), p=0.2),
                             normalize,
                             ])
 
@@ -246,7 +246,7 @@ def eval_model(model, config, transform, eval_func, file_name, map_location = 0,
     # load snapshot
     path_to_experiment = os.path.join(config['checkpoint']['experiment_path'], config['checkpoint']['snapshot_name'])
     checkpoint = torch.load(path_to_experiment, map_location=torch.device(f'cuda:{map_location}')) 
-    load_checkpoint(checkpoint, model, optimizer=None)
+    load_checkpoint(checkpoint['state_dict'], model, optimizer=None)
     epoch_of_checkpoint = checkpoint['epoch']
     # making dataset
     test_dataset = make_dataset(config, val_transform=transform, mode='eval')

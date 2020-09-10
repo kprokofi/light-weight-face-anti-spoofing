@@ -13,27 +13,34 @@ class Conv2d_cd(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size=3, stride=1,
                  padding=1, dilation=1, groups=1, bias=False, theta=0):
 
-        super(Conv2d_cd, self).__init__() 
-        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding, dilation=dilation, groups=groups, bias=bias)
+        super(Conv2d_cd, self).__init__()
+        self.weight = nn.Parameter(kaiming_init(out_channels, in_channels, kernel_size)) 
         self.theta = theta
+        self.bias = bias or None
+        self.stride = stride
+        self.groups = groups
+        self.padding = padding
         self.i = 0
 
     def forward(self, x):
-        out_normal = self.conv(x)
-        if self.training:
-            self.theta = 7e-9*self.i
-            self.i +=1
 
+        if self.training and self.i < int(10e3) and self.theta != 0:
+            self.theta = -0.000000000476190*self.i**2+0.000074761904762*self.i-0.000000000000003
+            self.i +=1
+        print(self.theta)
         if math.fabs(self.theta - 0.0) < 1e-8:
-            return out_normal 
+            out_normal = F.conv2d(input=x, weight=self.weight, bias=self.bias, stride=self.stride, padding=self.padding, groups=self.groups)
+            return out_normal
         else:
-            #pdb.set_trace()
-            [C_out,C_in, kernel_size,kernel_size] = self.conv.weight.shape
-            kernel_diff = self.conv.weight.sum(2).sum(2)
+            [C_out, C_in, kernel_size, kernel_size] = self.weight.shape
+            kernel_diff = self.weight.sum(2).sum(2)
             kernel_diff = kernel_diff[:, :, None, None]
-            out_diff = F.conv2d(input=x, weight=kernel_diff, bias=self.conv.bias, stride=self.conv.stride, padding=0, groups=self.conv.groups)
+            out_diff = F.conv2d(input=x, weight=kernel_diff, bias=self.bias, stride=self.stride, padding=0, groups=self.groups)
 
             return out_normal - self.theta * out_diff
+
+def kaiming_init(C_out, C_in, k):
+    return torch.randn(C_out, C_in, k, k)*math.sqrt(2./C_in)
 
 class Dropout(nn.Module):
     DISTRIBUTIONS = ['bernoulli', 'gaussian', 'none']
@@ -104,7 +111,6 @@ class h_swish(nn.Module):
 
     def forward(self, x):
         return x * self.sigmoid(x)
-
 
 class SELayer(nn.Module):
     def __init__(self, channel, reduction=4):
