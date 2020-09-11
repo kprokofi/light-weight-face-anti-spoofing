@@ -13,17 +13,19 @@ class Conv2d_cd(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size=3, stride=1,
                  padding=1, dilation=1, groups=1, bias=False, theta=0):
 
-        super(Conv2d_cd, self).__init__()
-        self.weight = nn.Parameter(kaiming_init(out_channels, in_channels, kernel_size)) 
+        super(Conv2d_cd, self).__init__() 
         self.theta = theta
         self.bias = bias or None
         self.stride = stride
         self.groups = groups
+        if self.groups > 1:
+            self.weight = nn.Parameter(kaiming_init(out_channels//out_channels, in_channels, kernel_size))
+        else:
+            self.weight = nn.Parameter(kaiming_init(out_channels, in_channels, kernel_size))
         self.padding = padding
         self.i = 0
 
     def forward(self, x):
-
         if self.training and self.i < int(10e3) and self.theta != 0:
             self.theta = -0.000000000476190*self.i**2+0.000074761904762*self.i-0.000000000000003
             self.i +=1
@@ -201,7 +203,7 @@ class InvertedResidual(nn.Module):
 class MobileNetV3(nn.Module):
     def __init__(self, cfgs, mode, prob_dropout, type_dropout, prob_dropout_linear=0.5, 
                                                                 embeding_dim=1280, mu=0.5, sigma=0.3, 
-                                                                num_classes=1000, width_mult=1., theta=0):
+                                                                num_classes=1000, width_mult=1., theta=0, multi_heads=True):
         super(MobileNetV3, self).__init__()
         # setting of inverted residual blocks
         self.cfgs = cfgs
@@ -210,6 +212,7 @@ class MobileNetV3(nn.Module):
         self.mu = mu
         self.sigma = sigma
         self.theta = theta
+        self.multi_heads = multi_heads
         assert mode in ['large', 'small']
 
         # building first layer
@@ -245,27 +248,28 @@ class MobileNetV3(nn.Module):
             h_swish(),
             nn.Linear(embeding_dim, 2),
         )
-        self.lightning = nn.Sequential(
-            # nn.Linear(exp_size, embeding_dim),
-            nn.Dropout(prob_dropout_linear),
-            nn.BatchNorm1d(embeding_dim),
-            h_swish(),
-            nn.Linear(embeding_dim, 5),
-        )
-        self.spoof_type = nn.Sequential(
-            # nn.Linear(exp_size, embeding_dim),
-            nn.Dropout(prob_dropout_linear),
-            nn.BatchNorm1d(embeding_dim),
-            h_swish(),
-            nn.Linear(embeding_dim, 11),
-        )
-        self.real_atr = nn.Sequential(
-            # nn.Linear(exp_size, embeding_dim),
-            nn.Dropout(prob_dropout_linear),
-            nn.BatchNorm1d(embeding_dim),
-            h_swish(),
-            nn.Linear(embeding_dim, 40),
-        )
+        if self.multi_heads:
+            self.lightning = nn.Sequential(
+                # nn.Linear(exp_size, embeding_dim),
+                nn.Dropout(prob_dropout_linear),
+                nn.BatchNorm1d(embeding_dim),
+                h_swish(),
+                nn.Linear(embeding_dim, 5),
+            )
+            self.spoof_type = nn.Sequential(
+                # nn.Linear(exp_size, embeding_dim),
+                nn.Dropout(prob_dropout_linear),
+                nn.BatchNorm1d(embeding_dim),
+                h_swish(),
+                nn.Linear(embeding_dim, 11),
+            )
+            self.real_atr = nn.Sequential(
+                # nn.Linear(exp_size, embeding_dim),
+                nn.Dropout(prob_dropout_linear),
+                nn.BatchNorm1d(embeding_dim),
+                h_swish(),
+                nn.Linear(embeding_dim, 40),
+            )
         # self._initialize_weights()
 
     def forward(self, x):
@@ -280,10 +284,12 @@ class MobileNetV3(nn.Module):
         # output = self.dw_bn(output)
         output = output.view(output.size(0), -1)
         spoof_out = self.spoofer(output)
-        type_spoof = self.spoof_type(output)
-        lightning_type = self.lightning(output)
-        real_atr = torch.sigmoid(self.real_atr(output))
-        return spoof_out, type_spoof, lightning_type, real_atr
+        if self.multi_heads:
+            type_spoof = self.spoof_type(output)
+            lightning_type = self.lightning(output)
+            real_atr = torch.sigmoid(self.real_atr(output))
+            return spoof_out, type_spoof, lightning_type, real_atr
+        return spoof_out
 
     def spoof_task(self, features):
         output = self.avgpool(features)

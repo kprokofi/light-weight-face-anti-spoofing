@@ -59,10 +59,11 @@ def save_checkpoint(state, filename="my_model.pth.tar"):
     torch.save(state, filename)
 
 def load_checkpoint(checkpoint, net, optimizer=None, load_optimizer=False, strict=False):
-    print("==> Loading checkpoint")
+    print("\n==> Loading checkpoint")
     missing_keys, unexpected_keys = net.load_state_dict(checkpoint, strict=strict)
     if missing_keys or unexpected_keys:
-        print(f'WARNING, NEXT KEYS HAVE NOT BEEN LOADED:\n\nmissing keys:{missing_keys}\n\nunexpected keys:{unexpected_keys}')
+        print(f'______________________\nWARNING, NEXT KEYS HAVE NOT BEEN LOADED:\n\nmissing keys:{missing_keys}\n\nunexpected keys:{unexpected_keys}')
+        print('\n proceed traning ...')
     if load_optimizer:
         optimizer.load_state_dict(checkpoint['optimizer'])
 
@@ -148,8 +149,8 @@ def make_dataset(config: dict, train_transform: object = None, val_transform: ob
             train =  LCFAD(root_dir=config['data']['data_root'], protocol='train', transform=train_transform)
             val = LCFAD(root_dir=config['data']['data_root'], protocol='val', transform=val_transform)
         elif config['dataset'] == 'celeba-spoof':
-            train =  CelebASpoofDataset(root_folder=config['data']['data_root'], test_mode=False, transform=train_transform)
-            val = CelebASpoofDataset(root_folder=config['data']['data_root'], test_mode=True, transform=val_transform)
+            train =  CelebASpoofDataset(root_folder=config['data']['data_root'], test_mode=False, transform=train_transform, multi_learning=config['multi_task_learning'])
+            val = CelebASpoofDataset(root_folder=config['data']['data_root'], test_mode=True, transform=val_transform, multi_learning=config['multi_task_learning'])
         elif config['dataset'] == 'Casia':
             train = CasiaSurfDataset(protocol=1, dir=config['data']['data_root'], mode='train', transform=train_transform)
             val = CasiaSurfDataset(protocol=1, dir=config['data']['data_root'], mode='dev', transform=val_transform)
@@ -166,7 +167,7 @@ def make_dataset(config: dict, train_transform: object = None, val_transform: ob
         elif config['test_dataset']['type'] == 'Casia':
             test = CasiaSurfDataset(protocol=1, dir=config['datasets']['Casia_root'], mode='test', transform=val_transform)
         elif config['test_dataset']['type'] == 'celeba-spoof':
-            test = CelebASpoofDataset(root_folder=config['datasets']['Celeba_root'], test_mode=True, transform=val_transform)
+            test = CelebASpoofDataset(root_folder=config['datasets']['Celeba_root'], test_mode=True, transform=val_transform, multi_learning=config['multi_task_learning'])
         return test
 
 def make_loader(train, val, config, sampler=None):
@@ -221,14 +222,15 @@ def build_model(config, args, strict=True):
                                     sigma=config['dropout']['sigma'],
                                     embeding_dim=config['model']['embeding_dim'],
                                     prob_dropout_linear = config['dropout']['classifier'],
-                                    theta=config['conv_cd']['theta'])
+                                    theta=config['conv_cd']['theta'],
+                                    multi_heads = config['multi_task_learning'])
 
             if config['model']['pretrained']:
                 checkpoint = torch.load('pretrained/mobilenetv3-large-1cd25616.pth', map_location=f'cuda:{args.GPU}')
-                print('key in checkpoint were deleted:')
+                print('______________________\nkey in checkpoint were deleted:')
                 for key in list(checkpoint):
                     if key.endswith('0.1.running_mean') or key.endswith('0.1.running_var') or key.startswith('conv.'):
-                        print(key)
+                        print(f'-- {key}')
                         del checkpoint[key]
                 load_checkpoint(checkpoint, model, strict=strict)
         else:
@@ -238,7 +240,8 @@ def build_model(config, args, strict=True):
                                     mu=config['dropout']['mu'],
                                     sigma=config['dropout']['sigma'],
                                     embeding_dim=config['model']['embeding_dim'],
-                                    prob_dropout_linear = config['dropout']['classifier'])
+                                    prob_dropout_linear = config['dropout']['classifier'],
+                                    multi_task = config['multi_task_learning'])
 
             if config['model']['pretrained']:
                 model.load_state_dict(torch.load('pretrained/mobilenetv3-small-0.75-86c972c3.pth', 
@@ -324,7 +327,7 @@ def make_output(model, input, target, config):
             model1 = model
         # do everything after convolutions layers, strating with avg pooling
         all_tasks_output = model1.make_logits(features)
-        logits = all_tasks_output[0]
+        logits = all_tasks_output[0] if config['multi_task_learning'] else all_tasks_output
         if type(logits) == tuple:
             logits = logits[0]
         # take a derivative, make tensor, shape as features, but gradients insted features
@@ -352,7 +355,7 @@ def make_output(model, input, target, config):
         random_mask = random_uniform <= config['RSC']['b']
         output = torch.where(random_mask, new_logits, logits)
         if config['loss']['loss_type'] == 'soft_triple':
-            output =  (output, all_tasks_output[0][1])
+            output = (output, all_tasks_output[0][1]) if config['multi_task_learning'] else (output, all_tasks_output[1])
         output = (output, *all_tasks_output[1:])
         return output
     else:

@@ -31,9 +31,9 @@ experiment_snapshot = config['checkpoint']['snapshot_name']
 experiment_path = config['checkpoint']['experiment_path']
 WRITER = SummaryWriter(experiment_path)
 STEP, VAL_STEP = 0, 0
-BEST_ACCURACY, BEST_AUC, BEST_EER, BEST_ACER = 0, 0, float('inf'), float('inf')
+BEST_ACCURACY, CURRENT_ACCURACY, BEST_AUC, BEST_EER, BEST_ACER = 0, 0, 0, float('inf'), float('inf')
 def main():
-    global args, BEST_ACCURACY, BEST_EER, BEST_AUC, BEST_ACER, config
+    global args, BEST_ACCURACY, CURRENT_ACCURACY, BEST_EER, BEST_AUC, BEST_ACER, config
     # print experiments param
     init_experiment(config, path_to_config)
     # preprocessing data
@@ -89,7 +89,7 @@ def main():
     SM = build_criterion(config, args, task='main').cuda(device=args.GPU)
     CE = build_criterion(config, args, task='rest').cuda(device=args.GPU)
     BCE = nn.BCELoss().cuda(device=args.GPU)
-    criterion = (SM, CE, BCE)
+    criterion = (SM, CE, BCE) if config['multi_task_learning'] else SM
     # build optimizer and scheduler for it
     optimizer = torch.optim.SGD(model.parameters(), **config['optimizer'])
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, **config['scheduler'])
@@ -107,19 +107,27 @@ def main():
         accuracy = validate(val_loader, model, criterion)
 
         # remember best accuracy, AUC, EER, ACER and save checkpoint
-        if (epoch == 0 or epoch >=60) and accuracy > BEST_ACCURACY and args.save_checkpoint:
+        if (epoch == 0 or epoch >=60) and accuracy > CURRENT_ACCURACY and args.save_checkpoint:
             AUC, EER, _ , apcer, bpcer, acer = evaulate(model, val_loader, config, args, compute_accuracy=False)
             print(f'epoch: {epoch}   AUC: {AUC}   EER: {EER}   APCER: {apcer}   BPCER: {bpcer}   ACER: {acer}')
             if acer < BEST_ACER:
                 BEST_ACER = acer
                 checkpoint = {'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch':epoch}
                 save_checkpoint(checkpoint, f'{experiment_path}/{experiment_snapshot}')
-                BEST_ACCURACY = accuracy
+                CURRENT_ACCURACY = accuracy
                 BEST_EER = EER
                 BEST_AUC = AUC
 
-        # evaluate on val every 10 epoch and save snapshot if better results achieved
-        if ((epoch%10 == 0) or (epoch == config['epochs']['max_epoch']-1)) and args.save_checkpoint:
+        # if accuracy get better -> save in seperate checkpoint        
+        if accuracy > BEST_ACCURACY:
+            AUC, EER, accur, apcer, bpcer, acer, _, _ = evaulate(model, test_loader, config, args, compute_accuracy=True) 
+            print(f'epoch: {epoch}  accur: {round(np.mean(accur),3)}   AUC: {AUC}   EER: {EER}   APCER: {apcer}   BPCER: {bpcer}   ACER: {acer}')
+            checkpoint = {'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict(), 'epoch':epoch}
+            save_checkpoint(checkpoint, f'{experiment_path}/BEST_ACC_{experiment_snapshot}')
+            BEST_ACCURACY = accuracy
+
+        # evaluate on val every 10 epoch and save snapshot
+        if (epoch%10 == 0) and epoch != (config['epochs']['max_epoch'] - 1) and args.save_checkpoint:
             # printing results
             AUC, EER, accur, apcer, bpcer, acer, _, _ = evaulate(model, test_loader, config, args, compute_accuracy=True) 
             print(f'epoch: {epoch}  accur: {round(np.mean(accur),3)}   AUC: {AUC}   EER: {EER}   APCER: {apcer}   BPCER: {bpcer}   ACER: {acer}')
@@ -141,6 +149,8 @@ def train(train_loader, model, criterion, optimizer, epoch):
     model.train()
     loop = tqdm(enumerate(train_loader), total=len(train_loader), leave=False)
     for i, (input, target) in loop:
+        if i == 10:
+            break
         if config['data']['cuda']:
             input = input.cuda(device=args.GPU)
             target = target.cuda(device=args.GPU)
@@ -153,13 +163,19 @@ def train(train_loader, model, criterion, optimizer, epoch):
                 aug_output = cutmix(input, target, config, args)
             input, target_a, target_b, lam = aug_output
             tuple_target = (target_a, target_b, lam)
-            hot_target = lam*F.one_hot(target_a[:,0], 2) + (1-lam)*F.one_hot(target_b[:,0], 2)
+            if config['multi_task_learning']:
+                hot_target = lam*F.one_hot(target_a[:,0], 2) + (1-lam)*F.one_hot(target_b[:,0], 2)
+            else:
+                hot_target = lam*F.one_hot(target_a, 2) + (1-lam)*F.one_hot(target_b, 2)
             output = make_output(model, input, hot_target, config)
-            loss = multi_task_criterion(output, tuple_target, config, criterion, optimizer)
+            if config['multi_task_learning']:
+                loss = multi_task_criterion(output, tuple_target, config, criterion, optimizer)  
+            else:
+                loss = mixup_criterion(criterion, output, target_a, target_b, lam, 2)
         else:
-            new_target = F.one_hot(target[:,0], num_classes=2)
+            new_target = F.one_hot(target[:,0], num_classes=2) if config['multi_task_learning'] else F.one_hot(target, num_classes=2)
             output = make_output(model, input, new_target, config)
-            loss = multi_task_criterion(output, target, config, criterion, optimizer)
+            loss = multi_task_criterion(output, target, config, criterion, optimizer) if config['multi_task_learning'] else criterion(output, new_target)
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
@@ -167,7 +183,7 @@ def train(train_loader, model, criterion, optimizer, epoch):
         optimizer.step()
 
         # measure accuracy and record loss
-        acc = precision(output[0], target[:,0].reshape(-1), s=config['loss']['amsoftmax']['s'])
+        acc = precision(output[0], target[:,0].reshape(-1), s=config['loss']['amsoftmax']['s']) if config['multi_task_learning'] else precision(output, target, s=config['loss']['amsoftmax']['s'])
         losses.update(loss.item(), input.size(0))
         accuracy.update(acc, input.size(0))
 
@@ -192,13 +208,16 @@ def validate(val_loader, model, criterion):
         criterion = criterion[0]  
     # switch to evaluation mode and inference the model
     model.eval()
+    
     loop = tqdm(enumerate(val_loader), total=len(val_loader), leave=False)
     for i, (input, target) in loop:
+        if i == 10:
+            break
         if config['data']['cuda']:
             input = input.cuda(device=args.GPU)
+            target = target.cuda(device=args.GPU)
             if len(target.shape) > 1:
-                target = target[:, 0].reshape(-1).cuda(device=args.GPU)
-
+                target = target[:, 0].reshape(-1)
         # computing output and loss
         with torch.no_grad():
             features = model(input)
@@ -344,6 +363,10 @@ def init_experiment(config, path_to_config):
         print('USING SAMPLER')
     if config['loss']['amsoftmax']['ratio'] != [1,1]:
         print('USING ADAPTIVE LOSS')
-
+    if config['multi_task_learning']:
+        print('multi_task_learning using'.upper())
+    theta = config['conv_cd']['theta']
+    if theta > 0:
+        print(f'CDC method: {theta}')
 if __name__=='__main__':
     main()
