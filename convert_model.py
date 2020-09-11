@@ -7,8 +7,8 @@ import onnx
 parser.add_argument('--GPU', type=int, default=0, help='specify which gpu to use')
 parser.add_argument('--config', type=str, default='config.py', required=True,
                         help='Configuration file')
-parser.add_argument('--model_name', type=str, default='MobileNetv3.onnx', required=False,
-                        help='name to save the model in onnx format')
+parser.add_argument('--model_path', type=str, default='MobileNetv3.onnx', required=False,
+                        help='path to save the model in onnx format')
 # argument parsing and reading config
 args = parser.parse_args()
 path_to_config = os.path.join(current_dir, args.config)
@@ -29,5 +29,5 @@ load_checkpoint(checkpoint['state_dict'], model, optimizer=None, strict=True)
 model.eval()
 input_names = [ "actual_input_1" ] + [ "learned_%d" % i for i in range(16) ]
 output_names = [ "output1" ]
-torch.onnx.export(model, dummy_input, args.model_name, verbose=True, input_names=input_names, output_names=output_names)
+torch.onnx.export(model, dummy_input, args.model_path, verbose=True, input_names=input_names, output_names=output_names)
 
