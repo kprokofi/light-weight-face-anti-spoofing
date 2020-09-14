@@ -41,18 +41,19 @@ def main():
     train_transform_real = A.Compose([
                             A.Resize(**config['resize'], interpolation=cv2.INTER_CUBIC),
                             A.HorizontalFlip(p=0.35),
+                            A.augmentations.transforms.HueSaturationValue(p=0.25),
                             A.augmentations.transforms.ISONoise(color_shift=(0.15,0.35), intensity=(0.2, 0.5), p=0.35),
                             # A.augmentations.transforms.Blur(blur_limit=3, p=0.2),
                             A.augmentations.transforms.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, brightness_by_max=True, always_apply=False, p=0.35),
                             # A.augmentations.transforms.MotionBlur(blur_limit=4, p=0.2),
                             # # A.augmentations.transforms.RGBShift(p=0.2),
-                            
                             normalize,
                             ])
 
     train_transform_spoof = A.Compose([
                             A.Resize(**config['resize'], interpolation=cv2.INTER_CUBIC),
                             A.HorizontalFlip(p=0.35),
+                            A.augmentations.transforms.HueSaturationValue(p=0.25),
                             A.augmentations.transforms.ISONoise(color_shift=(0.15,0.35), intensity=(0.2, 0.5), p=0.2),
                             A.augmentations.transforms.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, brightness_by_max=True, always_apply=False, p=0.35),
                             # A.augmentations.transforms.RGBShift(p=0.2),
