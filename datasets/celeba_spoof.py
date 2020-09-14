@@ -40,6 +40,7 @@ class CelebASpoofDataset(Dataset):
         cropped_face = img[y1 : clamp(y1 + h1, 0, real_h), x1 : clamp(x1 + w1, 0, real_w), :]
         cropped_face = cv.cvtColor(cropped_face, cv.COLOR_BGR2RGB)
         # testing dataset and creating json and log file
+
         if self.test_dataset:
             path = data_item['path']
             label = int(data_item['labels'][43])
@@ -55,6 +56,7 @@ class CelebASpoofDataset(Dataset):
         else:
             labels = int(data_item['labels'][43])
             label = labels
+
         if self.transform:
             cropped_face = self.transform(label=label, img=cropped_face)['image']
         cropped_face = np.transpose(cropped_face, (2, 0, 1)).astype(np.float32)

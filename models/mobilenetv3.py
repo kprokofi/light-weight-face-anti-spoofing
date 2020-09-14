@@ -14,31 +14,32 @@ class Conv2d_cd(nn.Module):
                  padding=1, dilation=1, groups=1, bias=False, theta=0):
 
         super(Conv2d_cd, self).__init__() 
-        self.theta = theta
+        self.theta = 0
+        self.theta_limit = theta
         self.bias = bias or None
         self.stride = stride
         self.groups = groups
         if self.groups > 1:
-            self.weight = nn.Parameter(kaiming_init(out_channels//out_channels, in_channels, kernel_size))
+            self.weight = nn.Parameter(kaiming_init(out_channels, in_channels//in_channels, kernel_size))
         else:
             self.weight = nn.Parameter(kaiming_init(out_channels, in_channels, kernel_size))
         self.padding = padding
         self.i = 0
 
     def forward(self, x):
-        if self.training and self.i < int(10e3) and self.theta != 0:
+        if self.training and self.theta < self.theta_limit and self.theta_limit != 0:
             self.theta = -0.000000000476190*self.i**2+0.000074761904762*self.i-0.000000000000003
             self.i +=1
-        print(self.theta)
+        out_normal = F.conv2d(input=x, weight=self.weight, bias=self.bias, stride=self.stride, padding=self.padding, groups=self.groups)
         if math.fabs(self.theta - 0.0) < 1e-8:
-            out_normal = F.conv2d(input=x, weight=self.weight, bias=self.bias, stride=self.stride, padding=self.padding, groups=self.groups)
             return out_normal
         else:
             [C_out, C_in, kernel_size, kernel_size] = self.weight.shape
             kernel_diff = self.weight.sum(2).sum(2)
             kernel_diff = kernel_diff[:, :, None, None]
             out_diff = F.conv2d(input=x, weight=kernel_diff, bias=self.bias, stride=self.stride, padding=0, groups=self.groups)
-
+            if self.i in set((0, 1000, 7000, 10000)):
+                print(self.theta, end=' ')
             return out_normal - self.theta * out_diff
 
 def kaiming_init(C_out, C_in, k):
@@ -133,28 +134,28 @@ class SELayer(nn.Module):
 
 def conv_3x3_in(inp, oup, stride, theta):
     return nn.Sequential(
-        nn.Conv2d(inp, oup, 3, stride, 1, bias=False),
+        Conv2d_cd(inp, oup, 3, stride, 1, bias=False, theta=theta),
         nn.InstanceNorm2d(oup),
         h_swish()
     )
 
 def conv_3x3_bn(inp, oup, stride, theta):
     return nn.Sequential(
-        nn.Conv2d(inp, oup, 3, stride, 1, bias=False),
+        Conv2d_cd(inp, oup, 3, stride, 1, bias=False, theta=theta),
         nn.BatchNorm2d(oup),
         h_swish()
     )
 
 def conv_1x1_bn(inp, oup, theta):
     return nn.Sequential(
-        nn.Conv2d(inp, oup, 1, 1, 0, bias=False),
+        Conv2d_cd(inp, oup, 1, 1, 0, bias=False, theta=theta),
         nn.BatchNorm2d(oup),
         h_swish()
     )
 
 def conv_1x1_in(inp, oup, theta):
     return nn.Sequential(
-        nn.Conv2d(inp, oup, 1, 1, 0, bias=False),
+        Conv2d_cd(inp, oup, 1, 1, 0, bias=False, theta=theta),
         nn.InstanceNorm2d(oup),
         h_swish()
     )
@@ -167,29 +168,29 @@ class InvertedResidual(nn.Module):
         if inp == hidden_dim:
             self.conv = nn.Sequential(
                 # dw
-                nn.Conv2d(hidden_dim, hidden_dim, kernel_size, stride, (kernel_size - 1) // 2, groups=hidden_dim, bias=False),
+                Conv2d_cd(hidden_dim, hidden_dim, kernel_size, stride, (kernel_size - 1) // 2, groups=hidden_dim, bias=False, theta=theta),
                 nn.BatchNorm2d(hidden_dim),
                 h_swish() if use_hs else nn.ReLU(inplace=True),
                 # Squeeze-and-Excite
                 SELayer(hidden_dim) if use_se else nn.Identity(),
                 # pw-linear
-                nn.Conv2d(hidden_dim, oup, 1, 1, 0, bias=False),
+                Conv2d_cd(hidden_dim, oup, 1, 1, 0, bias=False, theta=theta),
                 nn.BatchNorm2d(oup),
             )
         else:
             self.conv = nn.Sequential(
                 # pw
-                nn.Conv2d(inp, hidden_dim, 1, 1, 0, bias=False),
+                Conv2d_cd(inp, hidden_dim, 1, 1, 0, bias=False, theta=theta),
                 nn.BatchNorm2d(hidden_dim),
                 h_swish() if use_hs else nn.ReLU(inplace=True),
                 # dw
-                nn.Conv2d(hidden_dim, hidden_dim, kernel_size, stride, (kernel_size - 1) // 2, groups=hidden_dim, bias=False),
+                Conv2d_cd(hidden_dim, hidden_dim, kernel_size, stride, (kernel_size - 1) // 2, groups=hidden_dim, bias=False, theta=theta),
                 nn.BatchNorm2d(hidden_dim),
                 # Squeeze-and-Excite
                 SELayer(hidden_dim) if use_se else nn.Identity(),
                 h_swish() if use_hs else nn.ReLU(inplace=True),
                 # pw-linear
-                nn.Conv2d(hidden_dim, oup, 1, 1, 0, bias=False),
+                Conv2d_cd(hidden_dim, oup, 1, 1, 0, bias=False, theta=theta),
                 nn.BatchNorm2d(oup),
             )
 
