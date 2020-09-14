@@ -40,19 +40,21 @@ def main():
     normalize = A.Normalize(**config['img_norm_cfg'])
     train_transform_real = A.Compose([
                             A.Resize(**config['resize'], interpolation=cv2.INTER_CUBIC),
-                            # A.HorizontalFlip(p=0.5),
+                            A.HorizontalFlip(p=0.35),
+                            A.augmentations.transforms.ISONoise(color_shift=(0.15,0.35), intensity=(0.2, 0.5), p=0.35),
                             # A.augmentations.transforms.Blur(blur_limit=3, p=0.2),
-                            # A.augmentations.transforms.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, brightness_by_max=True, always_apply=False, p=0.3),
+                            A.augmentations.transforms.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, brightness_by_max=True, always_apply=False, p=0.35),
                             # A.augmentations.transforms.MotionBlur(blur_limit=4, p=0.2),
                             # # A.augmentations.transforms.RGBShift(p=0.2),
-                            # A.augmentations.transforms.ISONoise(color_shift=(0.15,0.35), intensity=(0.2, 0.5)),
+                            
                             normalize,
                             ])
 
     train_transform_spoof = A.Compose([
                             A.Resize(**config['resize'], interpolation=cv2.INTER_CUBIC),
-                            # A.HorizontalFlip(p=0.5),
-                            # A.augmentations.transforms.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, brightness_by_max=True, always_apply=False, p=0.3),
+                            A.HorizontalFlip(p=0.35),
+                            A.augmentations.transforms.ISONoise(color_shift=(0.15,0.35), intensity=(0.2, 0.5), p=0.2),
+                            A.augmentations.transforms.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, brightness_by_max=True, always_apply=False, p=0.35),
                             # A.augmentations.transforms.RGBShift(p=0.2),
                             # A.augmentations.transforms.MotionBlur(blur_limit=4, p=0.2),
                             # A.augmentations.transforms.ISONoise(color_shift=(0.15,0.35), intensity=(0.2, 0.5), p=0.2),
@@ -149,8 +151,6 @@ def train(train_loader, model, criterion, optimizer, epoch):
     model.train()
     loop = tqdm(enumerate(train_loader), total=len(train_loader), leave=False)
     for i, (input, target) in loop:
-        if i == 10:
-            break
         if config['data']['cuda']:
             input = input.cuda(device=args.GPU)
             target = target.cuda(device=args.GPU)
@@ -211,8 +211,6 @@ def validate(val_loader, model, criterion):
     
     loop = tqdm(enumerate(val_loader), total=len(val_loader), leave=False)
     for i, (input, target) in loop:
-        if i == 10:
-            break
         if config['data']['cuda']:
             input = input.cuda(device=args.GPU)
             target = target.cuda(device=args.GPU)

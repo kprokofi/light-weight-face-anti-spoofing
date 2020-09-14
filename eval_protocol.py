@@ -133,7 +133,7 @@ def main():
     # load snapshot
     path_to_experiment = os.path.join(config['checkpoint']['experiment_path'], config['checkpoint']['snapshot_name'])
     checkpoint = torch.load(path_to_experiment, map_location=torch.device(f'cuda:{args.GPU}')) 
-    load_checkpoint(checkpoint, model, optimizer=None)
+    load_checkpoint(checkpoint['state_dict'], model, optimizer=None)
     epoch_of_checkpoint = checkpoint['epoch']
     # preprocessing
     normalize = A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
