@@ -1,8 +1,27 @@
+'''MIT License
+
+Copyright (C) 2019-2020 Intel Corporation
+ 
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom
+the Software is furnished to do so, subject to the following conditions:
+ 
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+ 
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+OR OTHER DEALINGS IN THE SOFTWARE.'''
+
 from sklearn.metrics import roc_curve, auc
-from reader_dataset_tmp import LCFAD_test
-from datasets.lcc_fasd import LCFAD
-from datasets.casia_surf import CasiaSurfDataset
-from datasets import CelebASpoofDataset
+from sklearn import metrics
 import albumentations as A
 import torch
 import numpy as np
@@ -14,9 +33,54 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
 import matplotlib
 import torch.nn as nn
-from sklearn import metrics
 from tqdm import tqdm
-import cv2
+import cv2 as cv
+
+def main():
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    parser = argparse.ArgumentParser(description='antispoofing training')
+    parser.add_argument('--draw_graph', default=False, type=bool, required=False, help='whether or not to draw graphics')
+    parser.add_argument('--GPU', default=0, type=int, required=False, help='specify which GPU to use')
+    parser.add_argument('--config', type=str, default=None, required=True,
+                        help='path to configuration file')
+    args = parser.parse_args()
+
+    path_to_config = args.config
+    config = read_py_config(path_to_config)
+    config['model']['pretrained'] = False
+    model = build_model(config, args, strict=True)
+    model.cuda(device=args.GPU)
+    if config['data_parallel']['use_parallel']:
+        model = torch.nn.DataParallel(model, **config['data_parallel']['parallel_params'])
+    # load snapshot
+    path_to_experiment = os.path.join(config['checkpoint']['experiment_path'], config['checkpoint']['snapshot_name'])
+    load_checkpoint(path_to_experiment, model, map_location=torch.device(f'cuda:{args.GPU}'), optimizer=None)
+    epoch_of_checkpoint = checkpoint['epoch']
+    # preprocessing
+    normalize = A.Normalize(**config['img_norm_cfg'])
+    test_transform = A.Compose([
+                A.Resize(**config['resize'], interpolation=cv.INTER_CUBIC),
+                normalize,
+                ])  
+    # making dataset and loader
+    test_transform = Transform(val=test_transform)
+    test_dataset = make_dataset(config, val_transform=test_transform, mode='eval')
+    test_loader = DataLoader(dataset=test_dataset, batch_size=100, shuffle=True, num_workers=2)
+    # computing metrics
+    AUC, EER, accur, apcer, bpcer, acer, fpr, tpr  = evaulate(model, test_loader, config, args, compute_accuracy=True)
+
+    print(f'EER = {round(EER*100,2)}\n\
+    accuracy on test data = {round(np.mean(accur),3)}\n\
+    AUC = {round(AUC,3)}\n\
+    apcer = {round(apcer*100,2)}\n\
+    bpcer = {round(bpcer*100,2)}\n\
+    acer = {round(acer*100,2)}\n\
+    checkpoint made on {epoch_of_checkpoint} epoch')
+ 
+    if args.draw_graph:
+        fnr = 1 - tpr
+        plot_ROC_curve(fpr, tpr, config)
+        DETCurve(fpr, fnr, EER, config)
 
 def evaulate(model, loader, config, args, compute_accuracy=True):
     ''' evaulating AUC, EER, ACER, BPCER, APCER on given data loader and model '''
@@ -29,7 +93,6 @@ def evaulate(model, loader, config, args, compute_accuracy=True):
         input = input.cuda(device=args.GPU)
         if len(target.shape) > 1:
             target = target[:, 0].reshape(-1).cuda(device=args.GPU)
-        # target = 1 - target
         with torch.no_grad():
             features = model(input)
             if config['data_parallel']['use_parallel']:
@@ -113,53 +176,6 @@ def DETCurve(fps,fns, EER, config):
     plt.title('DET curve', fontsize=20)
     plt.legend(loc='upper right', fontsize=16)
     fig.savefig(config['curves']['det_curve'])
-
-def main():
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    parser = argparse.ArgumentParser(description='antispoofing training')
-    parser.add_argument('--draw_graph', default=False, type=bool, help='whether or not to draw graphics')
-    parser.add_argument('--GPU', default=2, type=int, help='whether or not to draw graphics')
-    parser.add_argument('--config', type=str, default='config.py', required=True,
-                        help='Configuration file')
-    args = parser.parse_args()
-
-    path_to_config = os.path.join(current_dir, args.config)
-    config = read_py_config(path_to_config)
-    config['model']['pretrained'] = False
-    model = build_model(config, args, strict=True)
-    model.cuda(device=args.GPU)
-    if config['data_parallel']['use_parallel']:
-        model = torch.nn.DataParallel(model, **config['data_parallel']['parallel_params'])
-    # load snapshot
-    path_to_experiment = os.path.join(config['checkpoint']['experiment_path'], config['checkpoint']['snapshot_name'])
-    checkpoint = torch.load(path_to_experiment, map_location=torch.device(f'cuda:{args.GPU}')) 
-    load_checkpoint(checkpoint['state_dict'], model, optimizer=None)
-    epoch_of_checkpoint = checkpoint['epoch']
-    # preprocessing
-    normalize = A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-    test_transform = A.Compose([
-                A.Resize(**config['resize'], interpolation=cv2.INTER_CUBIC),
-                normalize,
-                ])  
-    # making dataset and loader
-    test_transform = Transform(val=test_transform)
-    test_dataset = make_dataset(config, val_transform=test_transform, mode='eval')
-    test_loader = DataLoader(dataset=test_dataset, batch_size=100, shuffle=True, num_workers=2)
-    # computing metrics
-    AUC, EER, accur, apcer, bpcer, acer, fpr, tpr  = evaulate(model, test_loader, config, args, compute_accuracy=True)
-
-    print(f'EER = {round(EER*100,2)}')
-    print(f'accuracy on test data = {round(np.mean(accur),3)}')
-    print(f'AUC = {round(AUC,3)}')
-    print(f'apcer = {round(apcer*100,2)}')
-    print(f'bpcer = {round(bpcer*100,2)}')
-    print(f'acer = {round(acer*100,2)}')
-    print(f'checkpoint made on {epoch_of_checkpoint} epoch')
-
-    if args.draw_graph:
-        fnr = 1 - tpr
-        plot_ROC_curve(fpr, tpr, config)
-        DETCurve(fpr, fnr, EER, config)
 
 if __name__ == "__main__":
     main()

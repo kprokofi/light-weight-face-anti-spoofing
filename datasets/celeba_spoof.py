@@ -1,3 +1,25 @@
+'''MIT License
+
+Copyright (C) 2019-2020 Intel Corporation
+ 
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom
+the Software is furnished to do so, subject to the following conditions:
+ 
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+ 
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+OR OTHER DEALINGS IN THE SOFTWARE.'''
+
 import os
 import json
 
@@ -9,7 +31,7 @@ import numpy as np
 import matplotlib.pyplot as plt 
 
 class CelebASpoofDataset(Dataset):
-    def __init__(self, root_folder, test_mode=False, transform=None, test_dataset=False, multi_learning=True):
+    def __init__(self, root_folder, test_mode=False, transform=None, multi_learning=True):
         self.root_folder = root_folder
         if test_mode:
             list_path = os.path.join(root_folder, 'metas/intra_test/items_test.json')
@@ -18,7 +40,7 @@ class CelebASpoofDataset(Dataset):
 
         with open(list_path, 'r') as f:
             self.data = json.load(f)
-
+        # transform is supposed to be instance of the Transform object from utils.py pending entry label
         self.transform = transform
         self.test_dataset = test_dataset
         self.multi_learning = multi_learning
@@ -39,15 +61,7 @@ class CelebASpoofDataset(Dataset):
 
         cropped_face = img[y1 : clamp(y1 + h1, 0, real_h), x1 : clamp(x1 + w1, 0, real_w), :]
         cropped_face = cv.cvtColor(cropped_face, cv.COLOR_BGR2RGB)
-        # testing dataset and creating json and log file
 
-        if self.test_dataset:
-            path = data_item['path']
-            label = int(data_item['labels'][43])
-            
-            # test_img = cv.resize(cropped_face, (128,128))
-            # plt.imsave(f'/home/prokofiev/pytorch/antispoofing/images/{path[-9:]}', arr = test_img, format='png')
-            return path, label, cropped_face.shape
         if self.multi_learning:
             labels = data_item['labels']
             label = int(labels[43])
@@ -60,7 +74,7 @@ class CelebASpoofDataset(Dataset):
         if self.transform:
             cropped_face = self.transform(label=label, img=cropped_face)['image']
         cropped_face = np.transpose(cropped_face, (2, 0, 1)).astype(np.float32)
-        return (torch.tensor(cropped_face), torch.tensor(labels, dtype=torch.long)) #see readme of the CelebA-Spoof to get layout of labels
+        return (torch.tensor(cropped_face), torch.tensor(labels, dtype=torch.long))
 
 def clamp(x, min_x, max_x):
     return min(max(x, min_x), max_x)

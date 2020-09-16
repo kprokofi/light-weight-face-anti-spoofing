@@ -1,82 +1,31 @@
-"""
-Creates a MobileNetV3 Model as defined in:
-Andrew Howard, Mark Sandler, Grace Chu, Liang-Chieh Chen, Bo Chen, Mingxing Tan, Weijun Wang, Yukun Zhu, Ruoming Pang, Vijay Vasudevan, Quoc V. Le, Hartwig Adam. (2019).
-Searching for MobileNetV3
-arXiv preprint arXiv:1905.02244.
-"""
+'''MIT License
+
+Copyright (C) 2019-2020 Intel Corporation
+ 
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom
+the Software is furnished to do so, subject to the following conditions:
+ 
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+ 
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+OR OTHER DEALINGS IN THE SOFTWARE.'''
+
 import torch
 import torch.nn as nn
 import math
 import torch.nn.functional as F
-
-class Conv2d_cd(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size=3, stride=1,
-                 padding=1, dilation=1, groups=1, bias=False, theta=0):
-
-        super(Conv2d_cd, self).__init__() 
-        self.theta = 0
-        self.theta_limit = theta
-        self.bias = bias or None
-        self.stride = stride
-        self.groups = groups
-        if self.groups > 1:
-            self.weight = nn.Parameter(kaiming_init(out_channels, in_channels//in_channels, kernel_size))
-        else:
-            self.weight = nn.Parameter(kaiming_init(out_channels, in_channels, kernel_size))
-        self.padding = padding
-        self.i = 0
-
-    def forward(self, x):
-        if self.training and self.theta < self.theta_limit and self.theta_limit != 0:
-            self.theta = -0.000000000476190*self.i**2+0.000074761904762*self.i-0.000000000000003
-            self.i +=1
-        out_normal = F.conv2d(input=x, weight=self.weight, bias=self.bias, stride=self.stride, padding=self.padding, groups=self.groups)
-        if math.fabs(self.theta - 0.0) < 1e-8:
-            return out_normal
-        else:
-            [C_out, C_in, kernel_size, kernel_size] = self.weight.shape
-            kernel_diff = self.weight.sum(2).sum(2)
-            kernel_diff = kernel_diff[:, :, None, None]
-            out_diff = F.conv2d(input=x, weight=kernel_diff, bias=self.bias, stride=self.stride, padding=0, groups=self.groups)
-            if self.i in set((0, 1000, 7000, 10000)):
-                print(self.theta, end=' ')
-            return out_normal - self.theta * out_diff
-
-def kaiming_init(C_out, C_in, k):
-    return torch.randn(C_out, C_in, k, k)*math.sqrt(2./C_in)
-
-class Dropout(nn.Module):
-    DISTRIBUTIONS = ['bernoulli', 'gaussian', 'none']
-
-    def __init__(self, p=0.5, mu=0.5, sigma=0.2, dist='bernoulli'):
-        super(Dropout, self).__init__()
-
-        self.dist = dist
-        assert self.dist in Dropout.DISTRIBUTIONS
-
-        self.p = float(p)
-        assert 0. <= self.p <= 1.
-
-        self.mu = float(mu)
-        self.sigma = float(sigma)
-        assert self.sigma > 0.
-
-    def forward(self, x):
-        if self.dist == 'bernoulli':
-            out = F.dropout2d(x, self.p, self.training)
-        elif self.dist == 'gaussian':
-            if self.training:
-                with torch.no_grad():
-                    soft_mask = x.new_empty(x.size()).normal_(self.mu, self.sigma).clamp_(0., 1.)
-
-                scale = 1. / self.mu
-                out = scale * soft_mask * x
-            else:
-                out = x
-        else:
-            out = x
-
-        return out
+from dropout import Dropout
+from conv2d_cd import Conv2d_cd
 
 def _make_divisible(v, divisor, min_value=None):
     """
@@ -234,16 +183,10 @@ class MobileNetV3(nn.Module):
             input_channel = output_channel
         self.features = nn.Sequential(*layers)
         # building last several layers
-        self.conv = conv_1x1_bn(input_channel, embeding_dim, theta=self.theta)
-        # k_size = (128 // 32, 128 // 32)
-        # self.dw_pool = nn.Conv2d(exp_size, exp_size, k_size,
-        #                          groups=exp_size, bias=False)
-        # self.dw_bn = nn.BatchNorm2d(exp_size)
+        self.conv_last = conv_1x1_bn(input_channel, embeding_dim, theta=self.theta)
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-
         # bulding heads for multi task
         self.spoofer = nn.Sequential(
-            # nn.Linear(exp_size, embeding_dim),
             nn.Dropout(prob_dropout_linear),
             nn.BatchNorm1d(embeding_dim),
             h_swish(),
@@ -251,38 +194,31 @@ class MobileNetV3(nn.Module):
         )
         if self.multi_heads:
             self.lightning = nn.Sequential(
-                # nn.Linear(exp_size, embeding_dim),
                 nn.Dropout(prob_dropout_linear),
                 nn.BatchNorm1d(embeding_dim),
                 h_swish(),
                 nn.Linear(embeding_dim, 5),
             )
             self.spoof_type = nn.Sequential(
-                # nn.Linear(exp_size, embeding_dim),
                 nn.Dropout(prob_dropout_linear),
                 nn.BatchNorm1d(embeding_dim),
                 h_swish(),
                 nn.Linear(embeding_dim, 11),
             )
             self.real_atr = nn.Sequential(
-                # nn.Linear(exp_size, embeding_dim),
                 nn.Dropout(prob_dropout_linear),
                 nn.BatchNorm1d(embeding_dim),
                 h_swish(),
                 nn.Linear(embeding_dim, 40),
             )
-        # self._initialize_weights()
 
     def forward(self, x):
-        # x = self.instanorm(x)
         x = self.features(x)
-        x = self.conv(x)
+        x = self.conv_last(x)
         return x
         
     def make_logits(self, features):
         output = self.avgpool(features)
-        # output = self.dw_pool(features)
-        # output = self.dw_bn(output)
         output = output.view(output.size(0), -1)
         spoof_out = self.spoofer(output)
         if self.multi_heads:
@@ -297,25 +233,6 @@ class MobileNetV3(nn.Module):
         output = output.view(output.size(0), -1)
         spoof_out = self.spoofer(output)
         return spoof_out
-
-    def _initialize_weights(self):
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-                m.weight.data.normal_(0, math.sqrt(2. / n))
-                if m.bias is not None:
-                    m.bias.data.zero_()
-            elif isinstance(m, nn.BatchNorm2d):
-                m.weight.data.fill_(1)
-                m.bias.data.zero_()
-            elif isinstance(m, nn.Linear):
-                n = m.weight.size(1)
-                m.weight.data.normal_(0, 0.01)
-                m.bias.data.zero_()
-
-    def set_theta(self, theta):
-        # for module in self.modules():
-        print(self.features[1].conv[0])
 
 def mobilenetv3_large(**kwargs):
     """
@@ -369,9 +286,7 @@ def test():
         x = torch.randn(10,3,128,128)
         y = model(x)
         out = model.make_logits(y)
-    # print(len(out))
-    # model.set_theta(0.2)
+    print(len(out))
 
 if __name__ == '__main__':
-    import torch
     test()

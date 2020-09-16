@@ -1,3 +1,25 @@
+'''MIT License
+
+Copyright (C) 2019-2020 Intel Corporation
+ 
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom
+the Software is furnished to do so, subject to the following conditions:
+ 
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+ 
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+OR OTHER DEALINGS IN THE SOFTWARE.'''
+
 import os.path as osp
 import os
 import sys
@@ -58,8 +80,12 @@ def save_checkpoint(state, filename="my_model.pth.tar"):
     print('==> saving checkpoint')
     torch.save(state, filename)
 
-def load_checkpoint(checkpoint, net, optimizer=None, load_optimizer=False, strict=False):
+def load_checkpoint(checkpoint_path, net, map_location, optimizer=None, load_optimizer=False, strict=True, config=None):
+    ''' load a checkpoint of the given model. If model is using for training with imagenet weights provided by
+        this project, then delete some wights due to mismatching architectures'''
+
     print("\n==> Loading checkpoint")
+    checkpoint = torch.load(checkpoint_path, map_location=map_location)
     missing_keys, unexpected_keys = net.load_state_dict(checkpoint, strict=strict)
     if missing_keys or unexpected_keys:
         print(f'______________________\nWARNING, NEXT KEYS HAVE NOT BEEN LOADED:\n\nmissing keys:{missing_keys}\n\nunexpected keys:{unexpected_keys}')
@@ -68,7 +94,7 @@ def load_checkpoint(checkpoint, net, optimizer=None, load_optimizer=False, stric
         optimizer.load_state_dict(checkpoint['optimizer'])
 
 def precision(output, target, s=None):
-    """Computes the precision"""
+    """Compute the precision"""
     if s:
         output = output*s
     if type(output) == tuple:
@@ -79,7 +105,6 @@ def precision(output, target, s=None):
 def mixup_target(input, target, config, cuda, num_classes=2):
     # compute mix-up augmentation
     input, target_a, target_b, lam = mixup_data(input, target, config['aug']['alpha'], config['aug']['beta'], cuda)
-    input, target_a, target_b = map(Variable, (input, target_a, target_b))
     return input, target_a, target_b, lam
 
 def mixup_data(x, y, alpha=1.0, beta=1.0, cuda=0):
@@ -143,31 +168,40 @@ def freeze_layers(model, open_layers):
                 p.requires_grad = False
 
 def make_dataset(config: dict, train_transform: object = None, val_transform: object = None, mode='train', eval_protocol='standart'):
-    ''' make train,val or test datasets '''
+    ''' make train, val or test datasets '''
+    celeba_root = config['datasets']['LCCFASD_root']
+    lccfasd_root = config['datasets']['LCCFASD_root']
+    casia_root = config['datasets']['Casia_root']
+
     if mode == 'train': 
-        if config['dataset'] == 'LCCFASD':
-            train =  LCFAD(root_dir=config['data']['data_root'], protocol='train', transform=train_transform)
-            val = LCFAD(root_dir=config['data']['data_root'], protocol='val', transform=val_transform)
+        if config['dataset'] == 'LCC_FASD':
+            train =  LCFAD(root_dir=lccfasd_root, protocol='train', transform=train_transform)
+            val = LCFAD(root_dir=lccfasd_root, protocol='val', transform=val_transform)
         elif config['dataset'] == 'celeba-spoof':
-            train =  CelebASpoofDataset(root_folder=config['data']['data_root'], test_mode=False, transform=train_transform, multi_learning=config['multi_task_learning'])
-            val = CelebASpoofDataset(root_folder=config['data']['data_root'], test_mode=True, transform=val_transform, multi_learning=config['multi_task_learning'])
+            train =  CelebASpoofDataset(root_folder=celeba_root, test_mode=False, 
+                                        transform=train_transform, multi_learning=config['multi_task_learning'])
+            val = CelebASpoofDataset(root_folder=celeba_root, test_mode=True, 
+                                     transform=val_transform, multi_learning=config['multi_task_learning'])
         elif config['dataset'] == 'Casia':
-            train = CasiaSurfDataset(protocol=1, dir=config['data']['data_root'], mode='train', transform=train_transform)
-            val = CasiaSurfDataset(protocol=1, dir=config['data']['data_root'], mode='dev', transform=val_transform)
+            train = CasiaSurfDataset(protocol=1, dir=casia_root, mode='train', transform=train_transform)
+            val = CasiaSurfDataset(protocol=1, dir=casia_root, mode='dev', transform=val_transform)
         elif config['dataset'] == 'multi_dataset':
-            train = MultiDataset(**config['datasets'], train=True, transform=train_transform)
-            val = MultiDataset(**config['datasets'], train=False, transform=val_transform)
+            train = MultiDataset(lccfasd_root, celeba_root, train=True, transform=train_transform, 
+                                 LCFASD_train_protocol='combine_all', LCFASD_val_protocol='val_test')
+            val = MultiDataset(lccfasd_root, celeba_root, train=False, transform=val_transform, 
+                               LCFASD_train_protocol='combine_all', LCFASD_val_protocol='val_test')
         return train, val
 
     if mode == 'eval':
         if config['test_dataset']['type'] == 'LCC_FASD' and config['dataset'] == 'celeba-spoof':
-            test = LCFAD(root_dir=config['datasets']['LCCFASD_root'], protocol='combine_all', transform=val_transform)
+            test = LCFAD(root_dir=lccfasd_root, protocol='combine_all', transform=val_transform)
         elif config['test_dataset']['type'] == 'LCC_FASD':
-            test = LCFAD(root_dir=config['datasets']['LCCFASD_root'], protocol='test', transform=val_transform)
+            assert config['dataset'] != 'celeba-spoof'
+            test = LCFAD(root_dir=lccfasd_root, protocol='test', transform=val_transform)
         elif config['test_dataset']['type'] == 'Casia':
-            test = CasiaSurfDataset(protocol=1, dir=config['datasets']['Casia_root'], mode='test', transform=val_transform)
+            test = CasiaSurfDataset(protocol=1, dir=casia_root, mode='test', transform=val_transform)
         elif config['test_dataset']['type'] == 'celeba-spoof':
-            test = CelebASpoofDataset(root_folder=config['datasets']['Celeba_root'], test_mode=True, transform=val_transform, multi_learning=config['multi_task_learning'])
+            test = CelebASpoofDataset(root_folder=celeba_root, test_mode=True, transform=val_transform, multi_learning=config['multi_task_learning'])
         return test
 
 def make_loader(train, val, config, sampler=None):
@@ -190,29 +224,24 @@ def build_model(config, args, strict=True):
     ''' build model and change layers depends on loss type'''
 
     if config['model']['model_type'] == 'Mobilenet2':
-        raise NotImplementedError
-        # model = mobilenetv2(prob_dropout=config['dropout']['prob_dropout'])
-        # if config['model']['pretrained']:
-        #     model.load_state_dict(torch.load('pretrained/mobilenetv2_128x128-fd66a69d.pth', 
-        #                                         map_location=f'cuda:{args.GPU}'), strict=strict)
-        
-        # if config['loss']['loss_type'] == 'amsoftmax':
-        #     model.conv = nn.Sequential(
-        #                 nn.Conv2d(320, config['model']['embeding_dim'], 1, 1, 0, bias=False),
-        #                 nn.Dropout(p=config['dropout']['classifier']),
-        #                 nn.BatchNorm2d(config['model']['embeding_dim']),
-        #                 nn.PReLU()
-        #             )
-        #     model.classifier = AngleSimpleLinear(config['model']['embeding_dim'], 2)
+        model = mobilenetv2(prob_dropout=config['dropout']['prob_dropout'],
+                                    type_dropout=config['dropout']['type'],
+                                    mu=config['dropout']['mu'],
+                                    sigma=config['dropout']['sigma'],
+                                    embeding_dim=config['model']['embeding_dim'],
+                                    prob_dropout_linear = config['dropout']['classifier'],
+                                    theta=config['conv_cd']['theta'],
+                                    multi_heads = config['multi_task_learning'])
 
-        # elif config['loss']['loss_type'] == 'soft_triple':
-        #     model.conv = nn.Sequential(
-        #                 nn.Conv2d(320, config['model']['embeding_dim'], 1, 1, 0, bias=False),
-        #                 nn.Dropout(p=config['dropout']['classifier']),
-        #                 nn.BatchNorm2d(config['model']['embeding_dim']),
-        #                 nn.PReLU()
-        #             )
-        #     model.classifier = SoftTripleLinear(config['model']['embeding_dim'], 2, num_proxies=config['loss']['soft_triple']['K'])
+        if config['model']['pretrained']:
+            checkpoint_path = config['model']['imagenet_weights']
+            load_checkpoint(checkpoint_path, model, strict=strict, map_location=f'cuda:{args.GPU}',config=config)
+        
+        if (config['loss']['loss_type'] == 'amsoftmax') and (config['loss']['amsoftmax']['margin_type'] != 'cross_entropy'):
+            model.spoofer = AngleSimpleLinear(config['model']['embeding_dim'], 2)
+
+        elif config['loss']['loss_type'] == 'soft_triple':
+            model.spoofer = SoftTripleLinear(config['model']['embeding_dim'], 2, num_proxies=config['loss']['soft_triple']['K'])
     else:
         assert config['model']['model_type'] == 'Mobilenet3'
         if config['model']['model_size'] == 'large':
@@ -226,13 +255,8 @@ def build_model(config, args, strict=True):
                                     multi_heads = config['multi_task_learning'])
 
             if config['model']['pretrained']:
-                checkpoint = torch.load('pretrained/mobilenetv3-large-1cd25616.pth', map_location=f'cuda:{args.GPU}')
-                print('______________________\nkey in checkpoint were deleted:')
-                for key in list(checkpoint):
-                    if key.endswith('0.1.running_mean') or key.endswith('0.1.running_var') or key.startswith('conv.'):
-                        print(f'-- {key}')
-                        del checkpoint[key]
-                load_checkpoint(checkpoint, model, strict=strict)
+                checkpoint_path = config['model']['imagenet_weights']
+                load_checkpoint(checkpoint_path, model, strict=strict, map_location=f'cuda:{args.GPU}',config=config)
         else:
             assert config['model']['model_size'] == 'small'
             model = mobilenetv3_small(prob_dropout=config['dropout']['prob_dropout'],
@@ -244,8 +268,8 @@ def build_model(config, args, strict=True):
                                     multi_task = config['multi_task_learning'])
 
             if config['model']['pretrained']:
-                model.load_state_dict(torch.load('pretrained/mobilenetv3-small-0.75-86c972c3.pth', 
-                                                map_location=f'cuda:{args.GPU}'), strict=strict)
+                checkpoint_path = config['model']['imagenet_weights']
+                load_checkpoint(checkpoint_path, model, strict=strict, map_location=f'cuda:{args.GPU}', config=config)
 
         if (config['loss']['loss_type'] == 'amsoftmax') and (config['loss']['amsoftmax']['margin_type'] != 'cross_entropy'):
             model.spoofer[3] = AngleSimpleLinear(config['model']['embeding_dim'], 2)
@@ -265,7 +289,8 @@ def build_criterion(config, args, task='main'):
         assert task == 'rest'
         criterion = AMSoftmaxLoss(margin_type='cross_entropy', 
                                   label_smooth=config['loss']['amsoftmax']['label_smooth'],
-                                  smoothing=config['loss']['amsoftmax']['smoothing'], 
+                                  smoothing=config['loss']['amsoftmax']['smoothing'],
+                                  gamma=config['loss']['amsoftmax']['gamma'],
                                   device=args.GPU)
     return criterion
 
@@ -297,7 +322,7 @@ def make_weights(config):
         raise NotImplementedError
     with open(os.path.join(config['data']['data_root'], 'metas/intra_test/items_train.json') , 'r') as f:
         dataset = json.load(f)
-    n = 494185
+    n = len(dataset)
     weights = [0 for i in range(n)]
     keys = list(map(int, list(dataset.keys())))
     keys.sort()
@@ -308,7 +333,7 @@ def make_weights(config):
             weights[int(key)] = 0.1
         else:
             assert label == 0
-            weights[int(key)] = 0.1632
+            weights[int(key)] = 0.2
 
     assert len(weights) == n
     return weights
@@ -337,7 +362,6 @@ def make_output(model, input, target, config):
 
         target_logits = torch.sum(logits*target, dim=1)
         gradients = torch.autograd.grad(target_logits, features, grad_outputs=torch.ones_like(target_logits), create_graph=True)[0]
-        # gradients = gradients[0] * features # here the same gradients and maybe multiply them with features
         # get value of 1-p quatile
         quantile = torch.tensor(np.quantile(a=gradients.data.cpu().numpy(), q=1-config['RSC']['p'], axis=(1,2,3)), device=input.device)
         quantile = quantile.reshape(input.size(0),1,1,1)
