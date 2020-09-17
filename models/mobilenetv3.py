@@ -24,8 +24,8 @@ import torch
 import torch.nn as nn
 import math
 import torch.nn.functional as F
-from dropout import Dropout
-from conv2d_cd import Conv2d_cd
+from .dropout import Dropout
+from .conv2d_cd import Conv2d_cd
 
 def _make_divisible(v, divisor, min_value=None):
     """

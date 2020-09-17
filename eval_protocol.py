@@ -27,7 +27,7 @@ import torch
 import numpy as np
 import argparse
 import os
-from utils import make_loader, make_dataset, load_checkpoint, build_model, read_py_config, Transform, make_output
+from utils import make_loader, make_dataset, load_checkpoint, build_model, read_py_config, Transform
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
@@ -54,8 +54,7 @@ def main():
         model = torch.nn.DataParallel(model, **config['data_parallel']['parallel_params'])
     # load snapshot
     path_to_experiment = os.path.join(config['checkpoint']['experiment_path'], config['checkpoint']['snapshot_name'])
-    load_checkpoint(path_to_experiment, model, map_location=torch.device(f'cuda:{args.GPU}'), optimizer=None)
-    epoch_of_checkpoint = checkpoint['epoch']
+    epoch_of_checkpoint = load_checkpoint(path_to_experiment, model, map_location=torch.device(f'cuda:{args.GPU}'), optimizer=None)
     # preprocessing
     normalize = A.Normalize(**config['img_norm_cfg'])
     test_transform = A.Compose([

@@ -83,15 +83,19 @@ def save_checkpoint(state, filename="my_model.pth.tar"):
 def load_checkpoint(checkpoint_path, net, map_location, optimizer=None, load_optimizer=False, strict=True, config=None):
     ''' load a checkpoint of the given model. If model is using for training with imagenet weights provided by
         this project, then delete some wights due to mismatching architectures'''
-
     print("\n==> Loading checkpoint")
     checkpoint = torch.load(checkpoint_path, map_location=map_location)
-    missing_keys, unexpected_keys = net.load_state_dict(checkpoint, strict=strict)
+    if 'state_dict' in checkpoint:
+        missing_keys, unexpected_keys = net.load_state_dict(checkpoint['state_dict'], strict=strict)
+    else:
+        missing_keys, unexpected_keys = net.load_state_dict(checkpoint, strict=strict)
     if missing_keys or unexpected_keys:
         print(f'______________________\nWARNING, NEXT KEYS HAVE NOT BEEN LOADED:\n\nmissing keys:{missing_keys}\n\nunexpected keys:{unexpected_keys}')
         print('\n proceed traning ...')
     if load_optimizer:
         optimizer.load_state_dict(checkpoint['optimizer'])
+    if 'epoch' in checkpoint:
+        return checkpoint['epoch']
 
 def precision(output, target, s=None):
     """Compute the precision"""
@@ -102,9 +106,9 @@ def precision(output, target, s=None):
     accuracy = (output.argmax(dim=1) == target).float().mean().item()
     return accuracy*100
 
-def mixup_target(input, target, config, cuda, num_classes=2):
+def mixup_target(input, target, config, args, num_classes=2):
     # compute mix-up augmentation
-    input, target_a, target_b, lam = mixup_data(input, target, config['aug']['alpha'], config['aug']['beta'], cuda)
+    input, target_a, target_b, lam = mixup_data(input, target, config['aug']['alpha'], config['aug']['beta'], args.GPU)
     return input, target_a, target_b, lam
 
 def mixup_data(x, y, alpha=1.0, beta=1.0, cuda=0):
@@ -169,7 +173,7 @@ def freeze_layers(model, open_layers):
 
 def make_dataset(config: dict, train_transform: object = None, val_transform: object = None, mode='train', eval_protocol='standart'):
     ''' make train, val or test datasets '''
-    celeba_root = config['datasets']['LCCFASD_root']
+    celeba_root = config['datasets']['Celeba_root']
     lccfasd_root = config['datasets']['LCCFASD_root']
     casia_root = config['datasets']['Casia_root']
 
@@ -338,57 +342,4 @@ def make_weights(config):
     assert len(weights) == n
     return weights
 
-def make_output(model, input, target, config):
-    ''' target - one hot for main task
-    return output 
-    If use rsc compute output applying channel-wise rsc method'''
-    assert target.shape[1] == 2
-    if config['RSC']['use_rsc']:
-        # making features before avg pooling
-        features = model(input)
-        if config['data_parallel']['use_parallel']:
-            model1 = model.module
-        else:
-            model1 = model
-        # do everything after convolutions layers, strating with avg pooling
-        all_tasks_output = model1.make_logits(features)
-        logits = all_tasks_output[0] if config['multi_task_learning'] else all_tasks_output
-        if type(logits) == tuple:
-            logits = logits[0]
-        # take a derivative, make tensor, shape as features, but gradients insted features
-        if config['aug']['type_aug']:
-            fold_target = target.argmax(dim=1)
-            target = F.one_hot(fold_target, num_classes=target.shape[1]) 
-
-        target_logits = torch.sum(logits*target, dim=1)
-        gradients = torch.autograd.grad(target_logits, features, grad_outputs=torch.ones_like(target_logits), create_graph=True)[0]
-        # get value of 1-p quatile
-        quantile = torch.tensor(np.quantile(a=gradients.data.cpu().numpy(), q=1-config['RSC']['p'], axis=(1,2,3)), device=input.device)
-        quantile = quantile.reshape(input.size(0),1,1,1)
-        # create mask
-        mask = gradients < quantile
-        
-        # element wise product of features and mask, correction for expectition value 
-        new_features = (features*mask)/(1-config['RSC']['p'])
-        # compute new logits
-        new_logits = model1.spoof_task(new_features)
-        if type(new_logits) == tuple:
-            new_logits = new_logits[0]
-        # compute this operation batch wise
-        random_uniform = torch.rand(size=(input.size(0), 1), device=input.device)
-        random_mask = random_uniform <= config['RSC']['b']
-        output = torch.where(random_mask, new_logits, logits)
-        if config['loss']['loss_type'] == 'soft_triple':
-            output = (output, all_tasks_output[0][1]) if config['multi_task_learning'] else (output, all_tasks_output[1])
-        output = (output, *all_tasks_output[1:])
-        return output
-    else:
-        assert config['RSC']['use_rsc'] == False
-        features = model(input)
-        if config['data_parallel']['use_parallel']:
-            model1 = model.module
-        else:
-            model1=model
-        output = model1.make_logits(features)
-        return output
 

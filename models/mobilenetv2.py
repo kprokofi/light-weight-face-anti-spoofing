@@ -22,10 +22,11 @@ OR OTHER DEALINGS IN THE SOFTWARE.'''
 
 import torch.nn as nn
 import torch
-from dropout import Dropout
+from .dropout import Dropout
+from .conv2d_cd import Conv2d_cd
 import math
 import torch.nn.functional as F
-from conv2d_cd import Conv2d_cd
+
 
 __all__ = ['mobilenetv2']
 
