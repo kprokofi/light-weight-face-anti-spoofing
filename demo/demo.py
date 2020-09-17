@@ -10,7 +10,11 @@ from ie_tools import load_ie_model
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from ... import utils
+import os,sys,inspect
+current_dir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
+parent_dir = os.path.dirname(current_dir)
+sys.path.insert(0, parent_dir) 
+import utils
 
 class FaceDetector:
     """Wrapper class for face detector"""
@@ -64,47 +68,55 @@ class VectorCNN:
         outputs = [self.net.forward(cv.resize(frame, (w, h))) for frame in batch]
         return outputs
 
-def pred_spoof(frame, detections, spoof_model, config, use_torch=False):
-    """Get prediction for all detected faces on the frame"""
-    faces = []
+class TorchCNN:
+    '''Wrapper for torch model'''
+    def __init__(self, model, checkpoint_path, config, device='cpu'):
+        self.model = model
+        if config['data_parallel']['use_parallel']:
+            self.model = nn.DataParallel(self.model, **config['data_parallel']['parallel_params'])
+        utils.load_checkpoint(checkpoint_path, self.model, map_location=device)
+        self.config = config
 
-    for rect, _ in detections:
-        left, top, right, bottom = rect
-        # cut face according coordinates of detections
-        faces.append(frame[top:bottom, left:right])
+    def preprocessing(self, images):
+        ''' making image preprocessing for pytorch pipeline '''
+        mean = np.array(self.config['img_norm_cfg']['mean']).reshape(3,1,1)
+        std = np.array(self.config['img_norm_cfg']['std']).reshape(3,1,1)
+        height, width = list(self.config['resize'].values())
+        for i in range(len(images)):
+            images[i] = cv.resize(images[i], (height, width) , interpolation=cv.INTER_CUBIC)
+            images[i] = cv.cvtColor(images[i], cv.COLOR_BGR2RGB)
+            images[i] = np.transpose(images[i], (2, 0, 1)).astype(np.float32)
+            images[i] = images[i]/255
+            images[i] = (images[i] - mean)/std
+        return torch.tensor(images, dtype=torch.float32)
 
-    if faces:
-        if torch:
-            # predicting output with torch model through pytorch
-            faces = make_preprocessing(faces)
-            spoof_model.eval()
-            if config['data_parallel']['use_parallel']:
-                spoof_model1 = spoof_model.module
-            else:
-                spoof_model1 = spoof_model
-            with torch.no_grad():
-                output = spoof_model1.forward(faces)
+    def forward(self, batch):
+        batch = self.preprocessing(batch)
+        self.model.eval()
+        if self.config['data_parallel']['use_parallel']:
+            model1 = self.model.module
+        else:
+            model1 = self.model
+        with torch.no_grad():
+            features = model1.forward(batch)
+            output = model1.spoof_task(features)
             if type(output) == tuple:
                 output = output[0]
             confidence = F.softmax(output, dim=-1).detach().numpy()
             return confidence
-        # predicting output with IR model through OpenVINO
+
+def pred_spoof(frame, detections, spoof_model, config):
+    """Get prediction for all detected faces on the frame"""
+    faces = []
+    for rect, _ in detections:
+        left, top, right, bottom = rect
+        # cut face according coordinates of detections
+        faces.append(frame[top:bottom, left:right])
+    if faces:
         output = spoof_model.forward(faces)
         output = list(map(lambda x: x.reshape(-1), output))
         return output
     return None, None
-
-def make_preprocessing(images):
-    ''' making image preprocessing for pytorch pipeline '''
-    mean = np.array([0.485, 0.456, 0.406]).reshape(3,1,1)
-    std = np.array([0.229, 0.224, 0.225]).reshape(3,1,1)
-    for i in range(len(images)):
-        images[i] = cv.resize(images[i], (128,128), cv.INTER_CUBIC)
-        images[i] = cv.cvtColor(images[i], cv.COLOR_BGR2RGB)
-        images[i] = np.transpose(images[i], (2, 0, 1)).astype(np.float32)
-        images[i] = images[i]/255
-        images[i] = (images[i] - mean)/std
-    return torch.tensor(images, dtype=torch.float32)
 
 def draw_detections(frame, detections, confidence):
     """Draws detections and labels"""
@@ -124,17 +136,17 @@ def draw_detections(frame, detections, confidence):
 
     return frame
 
-def run(params, capture, face_det, spoof_model, config, use_torch=False):
+def run(params, capture, face_det, spoof_model, config):
     """Starts the anti spoofing demo"""
     fourcc = cv.VideoWriter_fourcc(*'MP4V')
-    writer_video = cv.VideoWriter('output_video.avi', fourcc, 24, (720,540))
+    writer_video = cv.VideoWriter('output_video.mp4', fourcc, 24, (720,540))
     win_name = 'Antispoofing Recognition'
     while cv.waitKey(1) != 27:
         has_frame, frame = capture.read()
         if not has_frame:
             return
         detections = face_det.get_detections(frame)
-        confidence = pred_spoof(frame, detections, spoof_model, config, use_torch)
+        confidence = pred_spoof(frame, detections, spoof_model, config)
         frame = draw_detections(frame, detections, confidence)
         cv.imshow(win_name, frame)
         writer_video.write(cv.resize(frame, (720,540)))
@@ -149,7 +161,7 @@ def main():
     parser = argparse.ArgumentParser(description='antispoofing recognition live demo script')
     parser.add_argument('--video', type=str, default=None, help='Input video')
     parser.add_argument('--cam_id', type=int, default=-1, help='Input cam')
-    parser.add_argument('--config', type=str, default='config25.py', required=True,
+    parser.add_argument('--config', type=str, default=None, required=True,
                         help='Configuration file')
     parser.add_argument('--fd_model', type=str, required=True)
     parser.add_argument('--fd_thresh', type=float, default=0.6, help='Threshold for FD')
@@ -162,9 +174,7 @@ def main():
                              'impl.', type=str, default=None)
 
     args = parser.parse_args()
-    path_to_config = os.path.join(current_dir, args.config)
-    config = utils.read_py_config(path_to_config)
-    path_to_experiment = args.spf_model
+    config = utils.read_py_config(args.config)
 
     if args.cam_id >= 0:
         log.info('Reading from cam {}'.format(args.cam_id))
@@ -184,15 +194,11 @@ def main():
     if args.spf_model.endswith('pth.tar'):
         config['model']['pretrained'] = False
         spoof_model = utils.build_model(config, args, strict=True)
-        checkpoint = torch.load(path_to_experiment, map_location=torch.device('cpu'))
-        load_checkpoint(checkpoint, spoof_model)
-        if config['data_parallel']['use_parallel']:
-            spoof_model = nn.DataParallel(spoof_model, **config['data_parallel']['parallel_params'])
-        use_torch = True
+        spoof_model = TorchCNN(spoof_model, args.spf_model, config)
     else:
         spoof_model = VectorCNN(args.spf_model)
     
-    run(args, cap, face_detector, spoof_model, config, use_torch)
+    run(args, cap, face_detector, spoof_model, config)
 
 if __name__ == '__main__':
     main()
