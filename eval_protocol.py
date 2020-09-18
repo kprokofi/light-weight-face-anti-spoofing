@@ -1,6 +1,6 @@
 '''MIT License
 
-Copyright (C) 2019-2020 Intel Corporation
+Copyright (C) 2020 Prokofiev Kirill
  
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"),
@@ -47,18 +47,18 @@ def main():
 
     path_to_config = args.config
     config = read_py_config(path_to_config)
-    config['model']['pretrained'] = False
+    config.model.pretrained = False
     model = build_model(config, args, strict=True)
     model.cuda(device=args.GPU)
-    if config['data_parallel']['use_parallel']:
-        model = torch.nn.DataParallel(model, **config['data_parallel']['parallel_params'])
+    if config.data_parallel.use_parallel:
+        model = torch.nn.DataParallel(model, **config.data_parallel.parallel_params)
     # load snapshot
-    path_to_experiment = os.path.join(config['checkpoint']['experiment_path'], config['checkpoint']['snapshot_name'])
+    path_to_experiment = os.path.join(config.checkpoint.experiment_path, config.checkpoint.snapshot_name)
     epoch_of_checkpoint = load_checkpoint(path_to_experiment, model, map_location=torch.device(f'cuda:{args.GPU}'), optimizer=None)
     # preprocessing
-    normalize = A.Normalize(**config['img_norm_cfg'])
+    normalize = A.Normalize(**config.img_norm_cfg)
     test_transform = A.Compose([
-                A.Resize(**config['resize'], interpolation=cv.INTER_CUBIC),
+                A.Resize(**config.resize, interpolation=cv.INTER_CUBIC),
                 normalize,
                 ])  
     # making dataset and loader
@@ -94,7 +94,7 @@ def evaulate(model, loader, config, args, compute_accuracy=True):
             target = target[:, 0].reshape(-1).cuda(device=args.GPU)
         with torch.no_grad():
             features = model(input)
-            if config['data_parallel']['use_parallel']:
+            if config.data_parallel.use_parallel:
                 model1 = model.module
             else:
                 model1 = model
@@ -115,10 +115,10 @@ def evaulate(model, loader, config, args, compute_accuracy=True):
 
             if compute_accuracy:
                 accur.append((y_pred == y_true).mean())
-            if config['loss']['loss_type'] == 'amsoftmax':
-                output *= config['loss']['amsoftmax']['s']
-            if config['loss']['loss_type'] == 'soft_triple':
-                output *= config['loss']['soft_triple']['s']
+            if config.loss.loss_type == 'amsoftmax':
+                output *= config.loss.amsoftmax.s
+            if config.loss.loss_type == 'soft_triple':
+                output *= config.loss.soft_triple.s
             positive_probabilities = F.softmax(output, dim=-1)[:,1].cpu().numpy()
         proba_accum = np.concatenate((proba_accum, positive_probabilities))
         target_accum = np.concatenate((target_accum, y_true))
@@ -151,7 +151,7 @@ def plot_ROC_curve(fpr, tpr, config):
     plt.legend(loc='lower right', fontsize=13)
     plt.plot([0,1],[0,1], lw=3, linestyle='--', color='navy')
     plt.axes().set_aspect('equal')
-    plt.savefig(config['curves']['det_curve'])
+    plt.savefig(config.curves.det_curve)
 
 def DETCurve(fps,fns, EER, config):
     """
@@ -174,7 +174,7 @@ def DETCurve(fps,fns, EER, config):
     plt.axis([0.001,1,0.001,1])
     plt.title('DET curve', fontsize=20)
     plt.legend(loc='upper right', fontsize=16)
-    fig.savefig(config['curves']['det_curve'])
+    fig.savefig(config.curves.det_curve)
 
 if __name__ == "__main__":
     main()

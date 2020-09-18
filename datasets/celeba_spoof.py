@@ -1,6 +1,6 @@
 '''MIT License
 
-Copyright (C) 2019-2020 Intel Corporation
+Copyright (C) 2020 Prokofiev Kirill
  
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"),
@@ -42,7 +42,6 @@ class CelebASpoofDataset(Dataset):
             self.data = json.load(f)
         # transform is supposed to be instance of the Transform object from utils.py pending entry label
         self.transform = transform
-        self.test_dataset = test_dataset
         self.multi_learning = multi_learning
 
     def __len__(self):

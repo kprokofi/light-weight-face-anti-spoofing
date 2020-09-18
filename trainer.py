@@ -1,6 +1,6 @@
 '''MIT License
 
-Copyright (C) 2019-2020 Intel Corporation
+Copyright (C) 2020 Prokofiev Kirill
  
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"),
@@ -31,6 +31,7 @@ from tqdm import tqdm
 from utils import mixup_target, AverageMeter, load_checkpoint, save_checkpoint, precision, cutmix, make_dataset
 import os
 from eval_protocol import evaulate
+import numpy as np
 
 class Trainer:
     def __init__(self, model, criterion, optimizer, args, config, train_loader, val_loader, test_loader):
@@ -43,15 +44,13 @@ class Trainer:
         self.val_loader = val_loader
         self.test_loader = test_loader
         self.train_step, self.val_step = 0, 0
-        self.best_accuracy, self.current_accuracy, self.current_auc, self.current_eer, self.best_acer = 0, 0, 0, float('inf'), float('inf')
-        self.multitask = self.config['multi_task_learning']
-        self.augmentation = self.config['aug']['type_aug']
-        self.experiment_path = self.config['checkpoint']['experiment_path']
-        self.snapshot_name = self.config['checkpoint']['snapshot_name']
-        self.path_to_checkpoint = os.path.join(self.experiment_path, self.snapshot_name) 
-        self.data_parallel = self.config['data_parallel']['use_parallel']
-        self.cuda = self.config['data']['cuda']
-        self.writer = SummaryWriter(self.experiment_path)
+        self.best_accuracy, self.current_accuracy, self.current_auc = 0, 0, 0
+        self.current_eer, self.best_acer = float('inf'), float('inf')
+        self.path_to_checkpoint = os.path.join(self.config.checkpoint.experiment_path, 
+                                                self.config.checkpoint.snapshot_name) 
+        self.data_parallel = self.config.data_parallel.use_parallel
+        self.cuda = self.config.data.cuda
+        self.writer = SummaryWriter(self.config.checkpoint.experiment_path)
 
     def train(self, epoch: int):
         ''' method to train your model for epoch '''
@@ -67,36 +66,43 @@ class Trainer:
                 input = input.cuda(device=self.args.GPU)
                 target = target.cuda(device=self.args.GPU)
             # compute output and loss
-            if self.augmentation:
-                if self.augmentation == 'mixup':
+            if self.config.aug.type_aug:
+                if self.config.aug.type_aug == 'mixup':
                     aug_output = mixup_target(input, target, self.config, self.args)
                 else:
-                    assert self.augmentation == 'cutmix'
+                    assert self.config.aug.type_aug == 'cutmix'
                     aug_output = cutmix(input, target, self.config, self.args)
                 input, target_a, target_b, lam = aug_output
                 tuple_target = (target_a, target_b, lam)
-                if self.multitask:
+                if self.config.multi_task_learning:
                     hot_target = lam*F.one_hot(target_a[:,0], 2) + (1-lam)*F.one_hot(target_b[:,0], 2)
                 else:
                     hot_target = lam*F.one_hot(target_a, 2) + (1-lam)*F.one_hot(target_b, 2)
                 output = self.make_output(input, hot_target)
-                if self.multitask:
+                if self.config.multi_task_learning:
                     loss = self.multi_task_criterion(output, tuple_target)  
                 else:
                     loss = self.mixup_criterion(self.criterion, output, target_a, target_b, lam, 2)
             else:
-                new_target = F.one_hot(target[:,0], num_classes=2) if self.multitask else F.one_hot(target, num_classes=2)
+                new_target = (F.one_hot(target[:,0], num_classes=2) 
+                            if self.config.multi_task_learning 
+                            else F.one_hot(target, num_classes=2))
                 output = self.make_output(input, new_target)
-                loss = self.multi_task_criterion(output, target) if self.multitask else self.criterion(output, new_target)
+                loss = (self.multi_task_criterion(output, target) 
+                        if self.config.multi_task_learning 
+                        else self.criterion(output, new_target))
 
             # compute gradient and do SGD step
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
 
-            # measure accuracy and record loss
-            s = self.config['loss']['amsoftmax']['s']
-            acc = precision(output[0], target[:,0].reshape(-1), s) if self.multitask else precision(output, target, s)
+            # measure accuracy
+            s = self.config.loss.amsoftmax.s
+            acc = (precision(output[0], target[:,0].reshape(-1), s) 
+                  if self.config.multi_task_learning 
+                  else precision(output, target, s))
+            # record loss
             losses.update(loss.item(), input.size(0))
             accuracy.update(acc, input.size(0))
 
@@ -106,9 +112,10 @@ class Trainer:
             self.train_step += 1
 
             # update progress bar
-            max_epochs = self.config['epochs']['max_epoch']
+            max_epochs = self.config.epochs.max_epoch
             loop.set_description(f'Epoch [{epoch}/{max_epochs}]')
-            loop.set_postfix(loss=loss.item(), avr_loss = losses.avg, acc=acc, avr_acc=accuracy.avg, lr=self.optimizer.param_groups[0]['lr'])
+            loop.set_postfix(loss=loss.item(), avr_loss = losses.avg, 
+                             acc=acc, avr_acc=accuracy.avg, lr=self.optimizer.param_groups[0]['lr'])
         return losses.avg, accuracy.avg
 
     def validate(self):
@@ -119,7 +126,7 @@ class Trainer:
         # switch to evaluation mode and inference the model
         self.model.eval()
         loop = tqdm(enumerate(self.val_loader), total=len(self.val_loader), leave=False)
-        criterion = self.criterion[0] if self.multitask else self.criterion
+        criterion = self.criterion[0] if self.config.multi_task_learning else self.criterion
         for i, (input, target) in loop:
             if i == 10:
                 break
@@ -144,7 +151,7 @@ class Trainer:
                 loss = criterion(output, new_target)
 
             # measure accuracy and record loss
-            acc = precision(output, target, s=self.config['loss']['amsoftmax']['s'])
+            acc = precision(output, target, s=self.config.loss.amsoftmax.s)
             losses.update(loss.item(), input.size(0))
             accuracy.update(acc, input.size(0))
 
@@ -171,11 +178,12 @@ class Trainer:
                 self.current_accuracy = epoch_accuracy
                 self.current_eer = EER
                 self.current_auc = AUC
-                AUC, EER, accur, apcer, bpcer, acer, _, _ = evaulate(self.model, self.test_loader, self.config, self.args, compute_accuracy=True) 
-                print(f'__TEST__: epoch: {epoch}  accur: {round(np.mean(accur),3)}   AUC: {AUC}   EER: {EER}   APCER: {apcer}   BPCER: {bpcer}   ACER: {acer}')
+                AUC, EER, accur, apcer, bpcer, acer, _, _ = evaulate(self.model, self.test_loader, self.config,
+                                                                     self.args, compute_accuracy=True) 
+                print(f'__TEST__: epoch: {epoch}  accur: {round(np.mean(accur),3)}   AUC: {AUC}   EER: {EER}    APCER: {apcer}   BPCER: {bpcer}   ACER: {acer}')
 
         # evaluate on val every 10 epoch except last one and save checkpoint
-        if (epoch%10 == 0) and (epoch not in (self.config['epochs']['max_epoch'] - 1, 0, 60)) and (self.args.save_checkpoint):
+        if (epoch%10 == 0) and (epoch not in (self.config.epochs.max_epoch - 1, 0, 60)) and (self.args.save_checkpoint):
             # printing results
             AUC, EER, accur, apcer, bpcer, acer, _, _ = evaulate(self.model, self.test_loader, self.config, self.args, compute_accuracy=True) 
             print(f'epoch: {epoch}  accur: {round(np.mean(accur),3)}   AUC: {AUC}   EER: {EER}   APCER: {apcer}   BPCER: {bpcer}   ACER: {acer}')
@@ -187,7 +195,7 @@ class Trainer:
         return output 
         If use rsc compute output applying rsc method'''
         assert target.shape[1] == 2
-        if self.config['RSC']['use_rsc']:
+        if self.config.RSC.use_rsc:
             # making features before avg pooling
             features = self.model(input)
             if self.data_parallel:
@@ -196,37 +204,37 @@ class Trainer:
                 model1 = self.model
             # do everything after convolutions layers, strating with avg pooling
             all_tasks_output = model1.make_logits(features)
-            logits = all_tasks_output[0] if self.multitask else all_tasks_output
+            logits = all_tasks_output[0] if self.config.multi_task_learning else all_tasks_output
             if type(logits) == tuple:
                 logits = logits[0]
             # take a derivative, make tensor, shape as features, but gradients insted features
-            if self.augmentation:
+            if self.config.aug.type_aug:
                 fold_target = target.argmax(dim=1)
                 target = F.one_hot(fold_target, num_classes=target.shape[1]) 
             target_logits = torch.sum(logits*target, dim=1)
             gradients = torch.autograd.grad(target_logits, features, grad_outputs=torch.ones_like(target_logits), create_graph=True)[0]
             # get value of 1-p quatile
-            quantile = torch.tensor(np.quantile(a=gradients.data.cpu().numpy(), q=1-self.config['RSC']['p'], axis=(1,2,3)), device=input.device)
+            quantile = torch.tensor(np.quantile(a=gradients.data.cpu().numpy(), q=1-self.config.RSC.p, axis=(1,2,3)), device=input.device)
             quantile = quantile.reshape(input.size(0),1,1,1)
             # create mask
             mask = gradients < quantile
             
             # element wise product of features and mask, correction for expectition value 
-            new_features = (features*mask)/(1-self.config['RSC']['p'])
+            new_features = (features*mask)/(1-self.config.RSC.p)
             # compute new logits
             new_logits = model1.spoof_task(new_features)
             if type(new_logits) == tuple:
                 new_logits = new_logits[0]
             # compute this operation batch wise
             random_uniform = torch.rand(size=(input.size(0), 1), device=input.device)
-            random_mask = random_uniform <= self.config['RSC']['b']
+            random_mask = random_uniform <= self.config.RSC.b
             output = torch.where(random_mask, new_logits, logits)
-            if self.config['loss']['loss_type'] == 'soft_triple':
-                output = (output, all_tasks_output[0][1]) if self.multitask else (output, all_tasks_output[1])
+            if self.config.loss.loss_type == 'soft_triple':
+                output = (output, all_tasks_output[0][1]) if self.config.multi_task_learning else (output, all_tasks_output[1])
             output = (output, *all_tasks_output[1:])
             return output
         else:
-            assert self.config['RSC']['use_rsc'] == False
+            assert self.config.RSC.use_rsc == False
             features = self.model(input)
             if self.data_parallel:
                 model1 = self.model.module
@@ -240,7 +248,7 @@ class Trainer:
         target -> torch tensor of a shape [batch*num_tasks]
         return loss function '''
         SM, CE, BCE = self.criterion
-        if self.augmentation:
+        if self.config.aug.type_aug:
             target_a, target_b, lam = target
             spoof_loss = self.mixup_criterion(SM, output[0], target_a[:,0], target_b[:,0], lam, 2)
             spoof_type_loss = self.mixup_criterion(CE, output[1], y_a=target_a[:,1], 
@@ -255,7 +263,8 @@ class Trainer:
             # spoof loss, take derivitive
             spoof_target = F.one_hot(target[:,0], num_classes=2)
             spoof_type_target = F.one_hot(target[:,1], num_classes=11)
-            lightning_target = F.one_hot(target[:,2], num_classes=5)     
+            lightning_target = F.one_hot(target[:,2], num_classes=5)
+
             # compute losses
             spoof_loss = SM(output[0], spoof_target)
             spoof_type_loss =  CE(output[1], spoof_type_target)
@@ -267,18 +276,6 @@ class Trainer:
             filtered_target = target[:,3:][mask].type(torch.float32)
             real_atr_loss = BCE(filtered_output, filtered_target)
             
-        # taking derivitives
-        self.optimizer.zero_grad()
-        spoof_loss.backward(retain_graph=True)
-
-        self.optimizer.zero_grad()
-        spoof_type_loss.backward(retain_graph=True)
-
-        self.optimizer.zero_grad()
-        lightning_loss.backward(retain_graph=True)
-
-        self.optimizer.zero_grad()
-        real_atr_loss.backward(retain_graph=True)
         # combine losses
         loss = C*spoof_loss + Cs*spoof_type_loss + Ci*lightning_loss + Cf*real_atr_loss
         return loss
@@ -294,16 +291,16 @@ class Trainer:
 
     def test(self, transform, file_name, flag=None):
         if flag:
-            self.config['test_dataset']['type'] = 'celeba-spoof'
+            self.config.test_dataset.type = 'celeba-spoof'
 
         print('_____________EVAULATION_____________')
         # load snapshot
         epoch_of_checkpoint = load_checkpoint(self.path_to_checkpoint, self.model, map_location=torch.device(f'cuda:{self.args.GPU}'), optimizer=None, strict=True)
         # making dataset
         test_dataset = make_dataset(self.config, val_transform=transform, mode='eval')
-        test_loader = DataLoader(dataset=test_dataset, batch_size=self.config['data']['batch_size'],
-                                                    shuffle=True, pin_memory=self.config['data']['pin_memory'],
-                                                    num_workers=self.config['data']['data_loader_workers'])
+        test_loader = DataLoader(dataset=test_dataset, batch_size=self.config.data.batch_size,
+                                                    shuffle=True, pin_memory=self.config.data.pin_memory,
+                                                    num_workers=self.config.data.data_loader_workers)
         # printing results
         AUC, EER, accur, apcer, bpcer, acer, _, _ = evaulate(self.model, test_loader, self.config, self.args, compute_accuracy=True)
         results = f'''accuracy on test data = {round(np.mean(accur),3)}\t\
@@ -314,49 +311,49 @@ class Trainer:
                                 acer = {round(acer*100,2)}\t\
                                     checkpoint made on {epoch_of_checkpoint} epoch'''    
     
-        with open(os.path.join(self.experiment_path, file_name), 'w') as f:
+        with open(os.path.join(self.config.checkpoint.experiment_path, file_name), 'w') as f:
             f.write(results)
     
     def get_exp_info(self):
-        exp_num = self.config['exp_num']
+        exp_num = self.config.exp_num
         print(f'_______INIT EXPERIMENT {exp_num}______')
-        train_dataset, test_dataset = self.config['dataset'], self.config['test_dataset']['type']
+        train_dataset, test_dataset = self.config.dataset, self.config.test_dataset.type
         print(f'training on {train_dataset}, testing on {test_dataset}')
         print('\n\nSNAPSHOT')
-        for key, item in self.config['checkpoint'].items():
+        for key, item in self.config.checkpoint.items():
                 print(f'{key} --> {item}')
         print('\n\nMODEL')
-        for key, item in self.config['model'].items():
+        for key, item in self.config.model.items():
                 print(f'{key} --> {item}')
-        loss_type = self.config['loss']['loss_type']
+        loss_type = self.config.loss.loss_type
         print(f'\n\nLOSS TYPE : {loss_type.upper()}')
-        for key, item in self.config['loss'][f'{loss_type}'].items():
+        for key, item in self.config.loss[f'{loss_type}'].items():
             print(f'{key} --> {item}')
         print('\n\nDROPOUT PARAMS')
-        for key, item in self.config['dropout'].items():
+        for key, item in self.config.dropout.items():
                 print(f'{key} --> {item}')
         print('\n\nOPTIMAIZER')
-        for key, item in self.config['optimizer'].items():
+        for key, item in self.config.optimizer.items():
                 print(f'{key} --> {item}')
         print('\n\nADDITIONAL USING PARAMETRS')
-        if self.augmentation:
-            type_aug = self.config['aug']['type_aug']
+        if self.config.aug.type_aug:
+            type_aug = self.config.aug.type_aug
             print(f'\nAUG TYPE = {type_aug} USING')
-            for key, item in self.config['aug'].items():
+            for key, item in self.config.aug.items():
                 print(f'{key} --> {item}')
-        if self.config['RSC']['use_rsc']:
+        if self.config.RSC.use_rsc:
             print(f'RSC USING')
-            for key, item in self.config['RSC'].items():
+            for key, item in self.config.RSC.items():
                 print(f'{key} --> {item}') 
         if self.data_parallel:
-            ids = self.config['data_parallel']['parallel_params']['device_ids']
+            ids = self.config.data_parallel.parallel_params.device_ids
             print(f'USING DATA PATALLEL ON {ids[0]} and {ids[1]} GPU')
-        if self.config['data']['sampler']:
+        if self.config.data.sampler:
             print('USING SAMPLER')
-        if self.config['loss']['amsoftmax']['ratio'] != [1,1]:
+        if self.config.loss.amsoftmax.ratio != [1,1]:
             print('USING ADAPTIVE LOSS')
-        if self.config['multi_task_learning']:
+        if self.config.multi_task_learning:
             print('multi_task_learning using'.upper())
-        theta = self.config['conv_cd']['theta']
+        theta = self.config.conv_cd.theta
         if theta > 0:
             print(f'CDC method: {theta}')

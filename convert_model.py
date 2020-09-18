@@ -1,6 +1,6 @@
 '''MIT License
 
-Copyright (C) 2019-2020 Intel Corporation
+Copyright (C) 2020 Prokofiev Kirill
  
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"),
@@ -43,16 +43,16 @@ def main():
     path_to_config = args.config_path
     config = read_py_config(path_to_config)
     # get snapshot
-    experiment_snapshot = config['checkpoint']['snapshot_name']
-    experiment_path = config['checkpoint']['experiment_path']
+    experiment_snapshot = config.checkpoint.snapshot_name
+    experiment_path = config.checkpoint.experiment_path
     # input to inference model
     dummy_input = torch.randn(1, 3, *args.img_size, device=f'cuda:{args.GPU)}')
     # build model
     model = build_model(config, args, strict=True)
     model.cuda(device=args.GPU)
     # if model trained as data parallel object
-    if config['data_parallel']['use_parallel']:
-        model = torch.nn.DataParallel(model, **config['data_parallel']['parallel_params'])
+    if config.data_parallel.use_parallel:
+        model = torch.nn.DataParallel(model, **config.data_parallel.parallel_params)
     # load checkpoint from config
     load_checkpoint(path_to_experiment, model, map_location=torch.device(f'cuda:{args.GPU}'), optimizer=None, strict=True)
     # convert model to onnx

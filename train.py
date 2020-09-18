@@ -1,6 +1,6 @@
 '''MIT License
 
-Copyright (C) 2019-2020 Intel Corporation
+Copyright (C) 2020 Prokofiev Kirill
  
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"),
@@ -33,7 +33,7 @@ from utils import read_py_config, make_weights, Transform, make_dataset, make_lo
 from trainer import Trainer
 import os
 from eval_protocol import evaulate
-import cv2
+import cv2 as cv
 
 def main():
     # parse arguments
@@ -49,9 +49,9 @@ def main():
     config = read_py_config(path_to_config)
 
     # preprocessing data
-    normalize = A.Normalize(**config['img_norm_cfg'])
+    normalize = A.Normalize(**config.img_norm_cfg)
     train_transform_real = A.Compose([
-                            A.Resize(**config['resize'], interpolation=cv2.INTER_CUBIC),
+                            A.Resize(**config.resize, interpolation=cv.INTER_CUBIC),
                             A.HorizontalFlip(p=0.5),
                             A.augmentations.transforms.ISONoise(color_shift=(0.15,0.35), intensity=(0.2, 0.5), p=0.2),
                             A.augmentations.transforms.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, brightness_by_max=True, always_apply=False, p=0.3),
@@ -60,7 +60,7 @@ def main():
                             ])
 
     train_transform_spoof = A.Compose([
-                            A.Resize(**config['resize'], interpolation=cv2.INTER_CUBIC),
+                            A.Resize(**config.resize, interpolation=cv.INTER_CUBIC),
                             A.HorizontalFlip(p=0.5),
                             A.augmentations.transforms.ISONoise(color_shift=(0.15,0.35), intensity=(0.2, 0.5), p=0.2),
                             A.augmentations.transforms.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, brightness_by_max=True, always_apply=False, p=0.3),
@@ -69,12 +69,12 @@ def main():
                             ])
 
     val_transform = A.Compose([
-                A.Resize(**config['resize'], interpolation=cv2.INTER_CUBIC),
+                A.Resize(**config.resize, interpolation=cv.INTER_CUBIC),
                 normalize
                 ])
     
     # load data
-    sampler = config['data']['sampler']
+    sampler = config.data.sampler
     if sampler:
         weights = make_weights(config)
         sampler = torch.utils.data.WeightedRandomSampler(weights, 494185, replacement=True)
@@ -83,33 +83,33 @@ def main():
     train_dataset, val_dataset = make_dataset(config, train_transform, val_transform)
     train_loader, val_loader = make_loader(train_dataset, val_dataset, config, sampler=sampler)
     test_dataset = make_dataset(config, val_transform=val_transform, mode='eval')
-    test_loader = DataLoader(dataset=test_dataset, batch_size=config['data']['batch_size'],
-                                                shuffle=True, pin_memory=config['data']['pin_memory'],
-                                                num_workers=config['data']['data_loader_workers'])
+    test_loader = DataLoader(dataset=test_dataset, batch_size=config.data.batch_size,
+                                                shuffle=True, pin_memory=config.data.pin_memory,
+                                                num_workers=config.data.data_loader_workers)
 
     # build model and put it to cuda and if it needed then wrap model to data parallel
     model = build_model(config, args, strict=False)
     model.cuda(args.GPU)
-    if config['data_parallel']['use_parallel']:
-        model = torch.nn.DataParallel(model, **config['data_parallel']['parallel_params'])
+    if config.data_parallel.use_parallel:
+        model = torch.nn.DataParallel(model, **config.data_parallel.parallel_params)
     
     # build a criterion
     SM = build_criterion(config, args, task='main').cuda(device=args.GPU)
     CE = build_criterion(config, args, task='rest').cuda(device=args.GPU)
     BCE = nn.BCELoss().cuda(device=args.GPU)
-    criterion = (SM, CE, BCE) if config['multi_task_learning'] else SM
+    criterion = (SM, CE, BCE) if config.multi_task_learning else SM
     
     # build optimizer and scheduler for it
-    optimizer = torch.optim.SGD(model.parameters(), **config['optimizer'])
-    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, **config['scheduler'])
+    optimizer = torch.optim.SGD(model.parameters(), **config.optimizer)
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, **config.scheduler)
 
     # create Trainer object and get experiment information
     trainer = Trainer(model, criterion, optimizer, args, config, train_loader, val_loader, test_loader)
     trainer.get_exp_info()
 
     # learning epochs
-    for epoch in range(config['epochs']['start_epoch'], config['epochs']['max_epoch']):
-        if epoch != config['epochs']['start_epoch']:
+    for epoch in range(config.epochs.start_epoch, config.epochs.max_epoch):
+        if epoch != config.epochs.start_epoch:
             scheduler.step()
 
         # train model for one epoch
@@ -123,7 +123,7 @@ def main():
         trainer.eval(epoch, accuracy) 
 
     # evaulate in the end of training    
-    if config['evaulation']:
+    if config.evaulation:
         trainer.test(val_transform, file_name='LCC_FASD.txt', flag=None)
         trainer.test(val_transform, file_name='Celeba_test.txt', flag=True)
 
