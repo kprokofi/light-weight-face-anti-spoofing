@@ -30,7 +30,7 @@ def main():
     # parse arguments
     parser = argparse.ArgumentParser(description='converting model to onnx')
     parser.add_argument('--GPU', type=int, default=0, required=False, help='specify which gpu to use')
-    parser.add_argument('--config_path', type=str, default=None, required=True,
+    parser.add_argument('--config', type=str, default=None, required=True,
                             help='path to configuration file')
     parser.add_argument('--model_path', type=str, default='MobileNetv3.onnx', required=False,
                             help='path where to save the model in onnx format')
@@ -40,7 +40,7 @@ def main():
                         help='height and width of the image to resize')                        
     args = parser.parse_args()
     # read config
-    path_to_config = args.config_path
+    path_to_config = args.config
     config = read_py_config(path_to_config)
     # get snapshot
     experiment_snapshot = config.checkpoint.snapshot_name

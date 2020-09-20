@@ -60,8 +60,6 @@ class Trainer:
         self.model.train()
         loop = tqdm(enumerate(self.train_loader), total=len(self.train_loader), leave=False)
         for i, (input, target) in loop:
-            if i == 10:
-                break
             if self.cuda:
                 input = input.cuda(device=self.args.GPU)
                 target = target.cuda(device=self.args.GPU)
@@ -128,8 +126,6 @@ class Trainer:
         loop = tqdm(enumerate(self.val_loader), total=len(self.val_loader), leave=False)
         criterion = self.criterion[0] if self.config.multi_task_learning else self.criterion
         for i, (input, target) in loop:
-            if i == 10:
-                break
             if self.cuda:
                 input = input.cuda(device=self.args.GPU)
                 target = target.cuda(device=self.args.GPU)
@@ -275,7 +271,6 @@ class Trainer:
             filtered_output = output[3][mask] 
             filtered_target = target[:,3:][mask].type(torch.float32)
             real_atr_loss = BCE(filtered_output, filtered_target)
-            
         # combine losses
         loss = C*spoof_loss + Cs*spoof_type_loss + Ci*lightning_loss + Cf*real_atr_loss
         return loss
@@ -350,7 +345,8 @@ class Trainer:
             print(f'USING DATA PATALLEL ON {ids[0]} and {ids[1]} GPU')
         if self.config.data.sampler:
             print('USING SAMPLER')
-        if self.config.loss.amsoftmax.ratio != [1,1]:
+        if self.config.loss.amsoftmax.ratio != (1,1):
+            print(self.config.loss.amsoftmax.ratio)
             print('USING ADAPTIVE LOSS')
         if self.config.multi_task_learning:
             print('multi_task_learning using'.upper())

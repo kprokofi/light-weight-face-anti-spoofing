@@ -97,14 +97,14 @@ def conv_3x3_bn(inp, oup, stride, theta):
 
 def conv_1x1_bn(inp, oup, theta):
     return nn.Sequential(
-        Conv2d_cd(inp, oup, 1, 1, 0, bias=False, theta=theta),
+        nn.Conv2d(inp, oup, 1, 1, 0, bias=False),
         nn.BatchNorm2d(oup),
         h_swish()
     )
 
 def conv_1x1_in(inp, oup, theta):
     return nn.Sequential(
-        Conv2d_cd(inp, oup, 1, 1, 0, bias=False, theta=theta),
+        nn.Conv2d(inp, oup, 1, 1, 0, bias=False),
         nn.InstanceNorm2d(oup),
         h_swish()
     )
@@ -117,29 +117,29 @@ class InvertedResidual(nn.Module):
         if inp == hidden_dim:
             self.conv = nn.Sequential(
                 # dw
-                Conv2d_cd(hidden_dim, hidden_dim, kernel_size, stride, (kernel_size - 1) // 2, groups=hidden_dim, bias=False, theta=theta),
+                nn.Conv2d(hidden_dim, hidden_dim, kernel_size, stride, (kernel_size - 1) // 2, groups=hidden_dim, bias=False),
                 nn.BatchNorm2d(hidden_dim),
                 h_swish() if use_hs else nn.ReLU(inplace=True),
                 # Squeeze-and-Excite
                 SELayer(hidden_dim) if use_se else nn.Identity(),
                 # pw-linear
-                Conv2d_cd(hidden_dim, oup, 1, 1, 0, bias=False, theta=theta),
+                nn.Conv2d(hidden_dim, oup, 1, 1, 0, bias=False),
                 nn.BatchNorm2d(oup),
             )
         else:
             self.conv = nn.Sequential(
                 # pw
-                Conv2d_cd(inp, hidden_dim, 1, 1, 0, bias=False, theta=theta),
+                nn.Conv2d(inp, hidden_dim, 1, 1, 0, bias=False),
                 nn.BatchNorm2d(hidden_dim),
                 h_swish() if use_hs else nn.ReLU(inplace=True),
                 # dw
-                Conv2d_cd(hidden_dim, hidden_dim, kernel_size, stride, (kernel_size - 1) // 2, groups=hidden_dim, bias=False, theta=theta),
+                nn.Conv2d(hidden_dim, hidden_dim, kernel_size, stride, (kernel_size - 1) // 2, groups=hidden_dim, bias=False),
                 nn.BatchNorm2d(hidden_dim),
                 # Squeeze-and-Excite
                 SELayer(hidden_dim) if use_se else nn.Identity(),
                 h_swish() if use_hs else nn.ReLU(inplace=True),
                 # pw-linear
-                Conv2d_cd(hidden_dim, oup, 1, 1, 0, bias=False, theta=theta),
+                nn.Conv2d(hidden_dim, oup, 1, 1, 0, bias=False),
                 nn.BatchNorm2d(oup),
             )
 
