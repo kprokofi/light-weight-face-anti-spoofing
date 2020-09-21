@@ -178,7 +178,7 @@ def load_checkpoint(checkpoint, model):
 
 def main():
     """Prepares data for the antispoofing recognition demo"""
-    current_dir = os.path.dirname(os.path.abspath(__file__))
+
     parser = argparse.ArgumentParser(description='antispoofing recognition live demo script')
     parser.add_argument('--video', type=str, default=None, help='Input video')
     parser.add_argument('--cam_id', type=int, default=-1, help='Input cam')

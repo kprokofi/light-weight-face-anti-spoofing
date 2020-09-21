@@ -30,28 +30,34 @@ For training or evaluating on CelebA Spoof dataset you need to download dataset 
 cd /data_preparation/
 python3 prepare_celeba_json.py
 ```
-To train or evaluate on LCC FASD dataset you need to download it (link is available in their paper on [arxive](https://csit.am/2019/proceedings/PRIP/PRIP3.pdf)) and run following script:
+To train or evaluate on LCC FASD dataset you need to download it (link is available in their paper on [arxiv](https://csit.am/2019/proceedings/PRIP/PRIP3.pdf)). Then you need to get the OpenVINO™ face detector model (choose the one on the goole drive) and run following script:
 ```bash
-python3 prepare_LCC_FASD.py
+python3 prepare_LCC_FASD.py --fd_model <path to `.xml` face detector model> --root_dir <path to root dir of LCC_FASD>
 ```
 This script will cut faces tighter than it is in original dataset and get rid of some garbage crops. For running this script you need to activate OpenVINO™ environment. Refer to official documentation.
+
 You can use LCC FASD without doing this at all, but it seems to enhance performance, so I recommend doing this.
 To train or evaluate on CASIA CEFA you just need to download it. Reader for this dataset supports not only RGB modality, but depth and IR too. Nevertheless, it's not the purpose of this project.
+
+Note that the new folder will be created and named as `<old name>cropped`. So to train or test model with cropped data, please, set path to that new folder, which will be located in the same directory as launched script.
+
 ### Configuration file
 The script for training and inference uses a configuration file. This is default [configuration file](./configs/config.py). You need to specify paths to datasets. Training pipeline supports following methods, which you can switch on and tune hyperparams while training:
 * RSC - representation self challenging, applied before global average pooling. p, b - quantile and probability applying it on image in current batch
 * aug - advanced augmentation, appropriate value for type is 'cutmix' or 'mixup. lambda = BetaDistribution(alpha, beta), cutmix_prob - probability of applying cutmix on image.
-* loss - there are available two possible losses: 'amsoftmax' with 'cos','arcos','cross_enropy' margins and 'soft_triple' with different number of inner classes. For more details about this soft loss see in [paper](https://arxiv.org/pdf/1909.05235.pdf)
+* loss - there are available two possible losses: 'amsoftmax' with 'cos','arcos','cross_enropy' margins and 'soft_triple' with different number of inner classes. For more details about this soft triple loss see in [paper](https://arxiv.org/pdf/1909.05235.pdf)
 * curves - you can specify name of the curves, then set option '--draw_graph' to True when evaulate with eval_protocol.py script
 * data_parallel - you can train your network on several GPU
 * multi_task_learning - specify whether or not to train with multitask loss
 * conv_cd - this is option to switch on central difference convolutions instead of vanilla one changing value of theta from 0
+
 ## Training
 To start training create config file based on the default one and run 'train.py':
 ```bash
 sudo python3 train.py --config <path to config>;
 ```
 For additional parameters you can refer to help adding '--help'. For example, you can specify on which GPU you want to train your model. As you may notice, training pipeline supports parallel training and specified GPU in arguments must be the same as in configuration file for output GPU.
+
 ## Testing
 To test your model set 'test_dataset' in config file to one of preferable dataset (available params: 'celeba-spoof', 'LCC_FASD', 'Casia'). Then run script:
 ```bash
@@ -64,8 +70,9 @@ sudo python3 convert_model.py --config <path to config>; --model_path <path to w
 ```
 By default, the output model path is 'MobileNetv3.onnx'
 Now you obtain '.onnx' format. To obtain OpenVINO™ IR model you should refer to [official documentation](https://docs.openvinotoolkit.org/latest/openvino_docs_MO_DG_Deep_Learning_Model_Optimizer_DevGuide.html) for next steps.
+
 ## Demo
-To start demo you need to download one of available OpenVINO™ face detector model or choose the on on google drive. There is a trained antispoofing model that you can download and run, or choose your own trained model. If you use your own then you can convert it to the OpenVINO™ format to obtain best perfomance speed, but pytorch format will work as well.
+To start demo you need to download one of available OpenVINO™ face detector model or choose the one on google drive. There is a trained antispoofing model that you can download and run, or choose your own trained model. If you use your own then you can convert it to the OpenVINO™ format to obtain best perfomance speed, but pytorch format will work as well.
 
 After preparation start demo by running:
 ```bash

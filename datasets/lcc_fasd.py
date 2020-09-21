@@ -28,10 +28,11 @@ import numpy as np
 
 
 class LCFAD(Dataset):
-    def __init__(self, root_dir, protocol='train', transform=None):
+    def __init__(self, root_dir, protocol='train', transform=None, get_img_path=False):
         assert protocol in ['train', 'val', 'test', 'combine_partly', 'val_test', 'combine_all']
         self.root_dir = root_dir
         self.transform = transform
+        self.get_img_path = get_img_path
         if protocol == 'train':
             spoof_img, real_img = self.get_train_img(self.root_dir)
             self.list_img = spoof_img + real_img
@@ -72,6 +73,8 @@ class LCFAD(Dataset):
     def __getitem__(self, index):
         img_path = os.path.join(self.root_dir, self.list_img[index])
         image = cv.imread(img_path, flags=1)
+        if self.get_img_path:
+            return image, img_path
         image = cv.cvtColor(image, cv.COLOR_BGR2RGB)
         y_label = self.labels[index]
         if self.transform:

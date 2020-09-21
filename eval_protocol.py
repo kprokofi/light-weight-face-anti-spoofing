@@ -47,7 +47,7 @@ def main():
 
     path_to_config = args.config
     config = read_py_config(path_to_config)
-    config.model.pretrained = False
+    config['model']['pretrained'] = False
     model = build_model(config, args, strict=True)
     model.cuda(device=args.GPU)
     if config.data_parallel.use_parallel:
