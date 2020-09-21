@@ -139,11 +139,11 @@ def pred_spoof(frame, detections, spoof_model, config):
         return output
     return None, None
 
-def draw_detections(frame, detections, confidence):
+def draw_detections(frame, detections, confidence, thresh):
     """Draws detections and labels"""
     for i, rect in enumerate(detections):
         left, top, right, bottom = rect[0]
-        if confidence[i][1] > 0.4:
+        if confidence[i][1] > thresh:
             label = f'spoof: {round(confidence[i][1]*100, 3)}%'
             cv.rectangle(frame, (left, top), (right, bottom), (0, 0, 255), thickness=2)
         else:
@@ -168,7 +168,7 @@ def run(params, capture, face_det, spoof_model, config):
             return
         detections = face_det.get_detections(frame)
         confidence = pred_spoof(frame, detections, spoof_model, config)
-        frame = draw_detections(frame, detections, confidence)
+        frame = draw_detections(frame, detections, confidence, params.spoof_thresh)
         cv.imshow(win_name, frame)
         writer_video.write(cv.resize(frame, (720,540)))
 
@@ -186,7 +186,7 @@ def main():
                         help='Configuration file')
     parser.add_argument('--fd_model', type=str, required=True)
     parser.add_argument('--fd_thresh', type=float, default=0.6, help='Threshold for FD')
-
+    parser.add_argument('--spoof_thresh', type=float, default=0.4, help='Threshold for predicting spoof/real. The lower the more model oriented on spoofs')
     parser.add_argument('--spf_model', type=str, default=None, help='path to .pth checkpoint of model or .xml IR OpenVINO model', required=True)
 
     parser.add_argument('--device', type=str, default='CPU')
