@@ -1,9 +1,10 @@
-import sys
 import os
+import sys
 
 import glog as log
 import numpy as np
 from openvino.inference_engine import IENetwork, IEPlugin
+
 
 class IEModel:
     """Class for inference of models in the Inference Engine format"""

@@ -20,15 +20,16 @@ OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
 OR OTHER DEALINGS IN THE SOFTWARE.'''
 
-import os
 import json
+import os
 
 import cv2 as cv
-from tqdm import tqdm
+import matplotlib.pyplot as plt
+import numpy as np
 import torch
 from torch.utils.data import Dataset
-import numpy as np
-import matplotlib.pyplot as plt 
+from tqdm import tqdm
+
 
 class CelebASpoofDataset(Dataset):
     def __init__(self, root_folder, test_mode=False, transform=None, multi_learning=True):

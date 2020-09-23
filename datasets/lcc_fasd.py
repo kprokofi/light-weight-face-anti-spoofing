@@ -21,10 +21,11 @@ ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
 OR OTHER DEALINGS IN THE SOFTWARE.'''
 
 import os
-import torch
-from torch.utils.data import Dataset
+
 import cv2 as cv
 import numpy as np
+import torch
+from torch.utils.data import Dataset
 
 
 class LCFAD(Dataset):

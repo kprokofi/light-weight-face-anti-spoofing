@@ -21,7 +21,8 @@ ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
 OR OTHER DEALINGS IN THE SOFTWARE.'''
 
 from torch.utils.data import Dataset
-
+from .celeba_spoof import CelebASpoofDataset
+from .lcc_fasd import LCFAD
 
 class MultiDataset(Dataset):
     def __init__ (self, LCCFASD_root, Celeba_root, train=True, transform=None, LCFASD_train_protocol='combine_all', LCFASD_val_protocol='val_test'):

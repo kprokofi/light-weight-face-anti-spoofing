@@ -24,9 +24,10 @@ import os
 import re
 
 import cv2 as cv
+import numpy as np
 import torch
 from torch.utils.data import Dataset
-import numpy as np
+
 
 class CasiaSurfDataset(Dataset):
     def __init__(self, protocol: int, dir: str = 'data/CASIA_SURF', mode: str = 'train', depth=False, ir=False,
