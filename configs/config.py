@@ -47,7 +47,9 @@ model= dict(model_type='Mobilenet3',
             use_amsoftmax=True, 
             pretrained=True, 
             embeding_dim=512, 
-            imagenet_weights='./pretrained/mobilenetv3-large-1cd25616.pth')
+            imagenet_weights='./pretrained/mobilenetv3-large-1cd25616.pth',
+            # do not change this
+            to_forward=False)
 
 aug = dict(type_aug=None, 
             alpha=0.5, 
@@ -73,3 +75,6 @@ RSC = dict(use_rsc=False,
 test_dataset = dict(type='LCC_FASD')
 
 conv_cd = dict(theta=0)
+
+# don't change this
+test_steps=float('inf')

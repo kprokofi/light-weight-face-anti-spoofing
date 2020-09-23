@@ -20,23 +20,26 @@ OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
 OR OTHER DEALINGS IN THE SOFTWARE.'''
 
-import os.path as osp
-import os
-import sys
-import torch
-import logging
-from attrdict import AttrDict as adict
-from importlib import import_module
-from torch.autograd import Variable
-import numpy as np
-import torch.nn.functional as F
-from torch.utils.data import Dataset
-from datasets import LCFAD, CelebASpoofDataset, CasiaSurfDataset, MultiDataset
-from torch.utils.data import DataLoader
-from losses import AngleSimpleLinear, SoftTripleLinear, AMSoftmaxLoss, SoftTripleLoss
-import torch.nn as nn
-from models import mobilenetv2, mobilenetv3_large, mobilenetv3_small, Dropout
 import json
+import logging
+import os
+import os.path as osp
+import sys
+from importlib import import_module
+
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from attrdict import AttrDict as adict
+from torch.autograd import Variable
+from torch.utils.data import DataLoader, Dataset
+
+from datasets import LCFAD, CasiaSurfDataset, CelebASpoofDataset, MultiDataset
+from losses import (AMSoftmaxLoss, AngleSimpleLinear, SoftTripleLinear,
+                    SoftTripleLoss)
+from models import Dropout, mobilenetv2, mobilenetv3_large, mobilenetv3_small
+
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""
@@ -82,7 +85,7 @@ def save_checkpoint(state, filename="my_model.pth.tar"):
     print('==> saving checkpoint')
     torch.save(state, filename)
 
-def load_checkpoint(checkpoint_path, net, map_location, optimizer=None, load_optimizer=False, strict=True, config=None):
+def load_checkpoint(checkpoint_path, net, map_location, optimizer=None, load_optimizer=False, strict=True):
     ''' load a checkpoint of the given model. If model is using for training with imagenet weights provided by
         this project, then delete some wights due to mismatching architectures'''
     print("\n==> Loading checkpoint")
@@ -108,12 +111,12 @@ def precision(output, target, s=None):
     accuracy = (output.argmax(dim=1) == target).float().mean().item()
     return accuracy*100
 
-def mixup_target(input, target, config, args, num_classes=2):
+def mixup_target(input, target, config, device, num_classes=2):
     # compute mix-up augmentation
-    input, target_a, target_b, lam = mixup_data(input, target, config.aug.alpha, config.aug.beta, args.GPU)
+    input, target_a, target_b, lam = mixup_data(input, target, config.aug.alpha, config.aug.beta, device)
     return input, target_a, target_b, lam
 
-def mixup_data(x, y, alpha=1.0, beta=1.0, cuda=0):
+def mixup_data(x, y, alpha=1.0, beta=1.0, device='cuda:0'):
     '''Returns mixed inputs, pairs of targets, and lambda'''
     if alpha > 0:
         lam = np.random.beta(alpha, beta)
@@ -121,18 +124,18 @@ def mixup_data(x, y, alpha=1.0, beta=1.0, cuda=0):
         lam = 1
 
     batch_size = x.size()[0]
-    index = torch.randperm(batch_size).cuda(device=cuda)
+    index = torch.randperm(batch_size).to(device)
 
     mixed_x = lam * x + (1 - lam) * x[index, :]
     y_a, y_b = y, y[index]
     return mixed_x, y_a, y_b, lam
 
-def cutmix(input, target, config, args, num_classes=2):
+def cutmix(input, target, config, device='cuda:0', num_classes=2):
     r = np.random.rand(1)
     if (config.aug.beta > 0) and (config.aug.alpha > 0) and (r < config.aug.cutmix_prob):
         # generate mixed sample
         lam = np.random.beta(config.aug.alpha > 0, config.aug.beta > 0)
-        rand_index = torch.randperm(input.size()[0]).cuda(device=args.GPU)
+        rand_index = torch.randperm(input.size()[0]).to(device)
         bbx1, bby1, bbx2, bby2 = rand_bbox(input.size(), lam)
         input[:, :, bbx1:bbx2, bby1:bby2] = input[rand_index, :, bbx1:bbx2, bby1:bby2]
         # adjust lambda to exactly match pixel ratio
@@ -226,22 +229,24 @@ def make_loader(train, val, config, sampler=None):
                                                 num_workers=config.data.data_loader_workers)
     return train_loader, val_loader
 
-def build_model(config, args, strict=True):
+def build_model(config, device, strict=True):
     ''' build model and change layers depends on loss type'''
+    parameters = dict(prob_dropout=config.dropout.prob_dropout,
+                    type_dropout=config.dropout.type,
+                    mu=config.dropout.mu,
+                    sigma=config.dropout.sigma,
+                    embeding_dim=config.model.embeding_dim,
+                    prob_dropout_linear = config.dropout.classifier,
+                    theta=config.conv_cd.theta,
+                    multi_heads = config.multi_task_learning,
+                    to_forward=config.model.to_forward)
 
     if config.model.model_type == 'Mobilenet2':
-        model = mobilenetv2(prob_dropout=config.dropout.prob_dropout,
-                                    type_dropout=config.dropout.type,
-                                    mu=config.dropout.mu,
-                                    sigma=config.dropout.sigma,
-                                    embeding_dim=config.model.embeding_dim,
-                                    prob_dropout_linear = config.dropout.classifier,
-                                    theta=config.conv_cd.theta,
-                                    multi_heads = config.multi_task_learning)
+        model = mobilenetv2(**parameters)
 
         if config.model.pretrained:
             checkpoint_path = config.model.imagenet_weights
-            load_checkpoint(checkpoint_path, model, strict=strict, map_location=f'cuda:{args.GPU}',config=config)
+            load_checkpoint(checkpoint_path, model, strict=strict, map_location=device)
         
         if (config.loss.loss_type == 'amsoftmax') and (config.loss.amsoftmax.margin_type != 'cross_entropy'):
             model.spoofer = AngleSimpleLinear(config.model.embeding_dim, 2)
@@ -251,31 +256,18 @@ def build_model(config, args, strict=True):
     else:
         assert config.model.model_type == 'Mobilenet3'
         if config.model.model_size == 'large':
-            model = mobilenetv3_large(prob_dropout=config.dropout.prob_dropout,
-                                    type_dropout=config.dropout.type,
-                                    mu=config.dropout.mu,
-                                    sigma=config.dropout.sigma,
-                                    embeding_dim=config.model.embeding_dim,
-                                    prob_dropout_linear = config.dropout.classifier,
-                                    theta=config.conv_cd.theta,
-                                    multi_heads = config.multi_task_learning)
+            model = mobilenetv3_large(**parameters)
 
             if config.model.pretrained:
                 checkpoint_path = config.model.imagenet_weights
-                load_checkpoint(checkpoint_path, model, strict=strict, map_location=f'cuda:{args.GPU}',config=config)
+                load_checkpoint(checkpoint_path, model, strict=strict, map_location=device)
         else:
             assert config.model.model_size == 'small'
-            model = mobilenetv3_small(prob_dropout=config.dropout.prob_dropout,
-                                    type_dropout=config.dropout.type,
-                                    mu=config.dropout.mu,
-                                    sigma=config.dropout.sigma,
-                                    embeding_dim=config.model.embeding_dim,
-                                    prob_dropout_linear = config.dropout.classifier,
-                                    multi_task = config.multi_task_learning)
+            model = mobilenetv3_small(**parameters)
 
             if config.model.pretrained:
                 checkpoint_path = config.model.imagenet_weights
-                load_checkpoint(checkpoint_path, model, strict=strict, map_location=f'cuda:{args.GPU}', config=config)
+                load_checkpoint(checkpoint_path, model, strict=strict, map_location=device)
 
         if (config.loss.loss_type == 'amsoftmax') and (config.loss.amsoftmax.margin_type != 'cross_entropy'):
             model.spoofer[3] = AngleSimpleLinear(config.model.embeding_dim, 2)
@@ -285,10 +277,10 @@ def build_model(config, args, strict=True):
 
     return model
 
-def build_criterion(config, args, task='main'):
+def build_criterion(config, device, task='main'):
     if task == 'main':
         if config.loss.loss_type == 'amsoftmax':
-            criterion = AMSoftmaxLoss(**config.loss.amsoftmax, device=args.GPU)
+            criterion = AMSoftmaxLoss(**config.loss.amsoftmax, device=device)
         elif config.loss.loss_type == 'soft_triple':
             criterion = SoftTripleLoss(**config.loss.soft_triple)
     else:
@@ -297,7 +289,7 @@ def build_criterion(config, args, task='main'):
                                   label_smooth=config.loss.amsoftmax.label_smooth,
                                   smoothing=config.loss.amsoftmax.smoothing,
                                   gamma=config.loss.amsoftmax.gamma,
-                                  device=args.GPU)
+                                  device=device)
     return criterion
 
 class Transform():

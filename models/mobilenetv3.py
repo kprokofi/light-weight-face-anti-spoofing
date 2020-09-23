@@ -20,12 +20,15 @@ OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
 OR OTHER DEALINGS IN THE SOFTWARE.'''
 
+import math
+
 import torch
 import torch.nn as nn
-import math
 import torch.nn.functional as F
-from .dropout import Dropout
+
 from .conv2d_cd import Conv2d_cd
+from .dropout import Dropout
+
 
 def _make_divisible(v, divisor, min_value=None):
     """
@@ -153,10 +156,12 @@ class InvertedResidual(nn.Module):
 class MobileNetV3(nn.Module):
     def __init__(self, cfgs, mode, prob_dropout, type_dropout, prob_dropout_linear=0.5, 
                                                                 embeding_dim=1280, mu=0.5, sigma=0.3, 
-                                                                num_classes=1000, width_mult=1., theta=0, multi_heads=True):
+                                                                num_classes=1000, width_mult=1., theta=0, 
+                                                                multi_heads=True, to_forward=False):
         super(MobileNetV3, self).__init__()
         # setting of inverted residual blocks
         self.cfgs = cfgs
+        self.to_forward = to_forward
         self.prob_dropout = prob_dropout
         self.type_dropout = type_dropout
         self.mu = mu
@@ -215,6 +220,8 @@ class MobileNetV3(nn.Module):
     def forward(self, x):
         x = self.features(x)
         x = self.conv_last(x)
+        if self.to_forward:
+            x = self.spoof_task(x)
         return x
         
     def make_logits(self, features):

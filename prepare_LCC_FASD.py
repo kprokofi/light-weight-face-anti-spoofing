@@ -1,28 +1,51 @@
+'''MIT License
+
+Copyright (C) 2020 Prokofiev Kirill
+ 
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom
+the Software is furnished to do so, subject to the following conditions:
+ 
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+ 
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+OR OTHER DEALINGS IN THE SOFTWARE.'''
+
 import argparse
 import os
 import os.path as osp
+import shutil
 
-import glog as log
 import cv2 as cv
+import glog as log
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from openvino.inference_engine import IENetwork, IEPlugin
-from antispoofing.datasets import LCFAD
 from tqdm import tqdm
-from demo.ie_tools import IEModel, load_ie_model
+
+from antispoofing.datasets import LCFAD
 from demo.demo import FaceDetector
-import shutil
+from demo.ie_tools import IEModel, load_ie_model
+
 
 def main():
-     """Prepares data for the antispoofing recognition demo"""
+    """Prepares data for the antispoofing recognition demo"""
     parser = argparse.ArgumentParser(description='prepare LCC FASD')
     parser.add_argument('--fd_model', type=str, required=True, help='path to fd model')
     parser.add_argument('--fd_thresh', type=float, default=0.6, help='Threshold for FD')
     parser.add_argument('--device', type=str, default='CPU')
     parser.add_argument('--root_dir', type=str, required=True, help='LCC FASD root dir')
-    current_dir = os.path.dirname(os.path.abspath(__file__))
     parser = argparse.ArgumentParser(description='LCC_FASD')
     args = parser.parse_args()
     
@@ -34,7 +57,7 @@ def main():
     dir_path = os.path.abspath(args.root_dir)
     for protocol in protocols:
         data =  LCFAD(root_dir=args.root_dir, protocol=protocol, transform=None, get_img_path=True)
-        for i, (image, path) in tqdm(enumerate(data), desc=protocol, total=len(data), leave=False):
+        for image, path in tqdm(data, desc=protocol, total=len(data), leave=False):
             if image.any():
                 detection = face_detector.get_detections(image)
                 if detection:

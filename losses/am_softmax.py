@@ -56,14 +56,14 @@ def label_smoothing(classes, y_hot, smoothing=0.1, dim=-1):
 class AMSoftmaxLoss(nn.Module):
     """Computes the AM-Softmax loss with cos or arc margin"""
     margin_types = ['cos', 'arc', 'adacos', 'cross_entropy']
-    def __init__(self, margin_type='cos', device=0, num_classes=2, label_smooth=False, smoothing=0.1, ratio=[1,1], gamma=0., m=0.5, s=30, t=1.):
+    def __init__(self, margin_type='cos', device='cuda:0', num_classes=2, label_smooth=False, smoothing=0.1, ratio=[1,1], gamma=0., m=0.5, s=30, t=1.):
         super(AMSoftmaxLoss, self).__init__()
         assert margin_type in AMSoftmaxLoss.margin_types
         self.margin_type = margin_type
         assert gamma >= 0
         self.gamma = gamma
         assert m >= 0
-        self.m = torch.Tensor([m/i for i in ratio]).cuda(device)
+        self.m = torch.Tensor([m/i for i in ratio]).to(device)
         assert s > 0
         if self.margin_type in ['arc','cos',]:
             self.s = s

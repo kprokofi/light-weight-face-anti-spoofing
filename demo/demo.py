@@ -21,21 +21,25 @@ ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
 OR OTHER DEALINGS IN THE SOFTWARE.'''
 
 import argparse
+import inspect
 import os
 import os.path as osp
-import glog as log
+import sys
+
 import cv2 as cv
+import glog as log
 import numpy as np
-from scipy.spatial.distance import cosine
-from ie_tools import load_ie_model
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import os,sys,inspect
+from ie_tools import load_ie_model
+from scipy.spatial.distance import cosine
+
 current_dir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
 parent_dir = os.path.dirname(current_dir)
 sys.path.insert(0, parent_dir) 
 import utils
+
 
 class FaceDetector:
     """Wrapper class for face detector"""
@@ -190,12 +194,14 @@ def main():
     parser.add_argument('--spf_model', type=str, default=None, help='path to .pth checkpoint of model or .xml IR OpenVINO model', required=True)
 
     parser.add_argument('--device', type=str, default='CPU')
+    parser.add_argument('--GPU', type=int, default=0, help='specify which GPU to use')
     parser.add_argument('-l', '--cpu_extension',
                         help='MKLDNN (CPU)-targeted custom layers.Absolute path to a shared library with the kernels '
                              'impl.', type=str, default=None)
 
     args = parser.parse_args()
     config = utils.read_py_config(args.config)
+    device = args.device + f':{args.GPU}' if args.device == 'cuda' else 'cpu'
 
     if args.cam_id >= 0:
         log.info('Reading from cam {}'.format(args.cam_id))
@@ -215,7 +221,7 @@ def main():
     if args.spf_model.endswith('pth.tar'):
         config.model.pretrained = False
         spoof_model = utils.build_model(config, args, strict=True)
-        spoof_model = TorchCNN(spoof_model, args.spf_model, config)
+        spoof_model = TorchCNN(spoof_model, args.spf_model, config, divice=device)
     else:
         spoof_model = VectorCNN(args.spf_model)
     

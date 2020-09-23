@@ -21,11 +21,12 @@ ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
 OR OTHER DEALINGS IN THE SOFTWARE.'''
 
 import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn.parameter import Parameter
 from torch.nn import init
+from torch.nn.parameter import Parameter
 
 
 class SoftTripleLinear(nn.Module):

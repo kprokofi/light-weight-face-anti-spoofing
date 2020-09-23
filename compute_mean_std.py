@@ -20,14 +20,17 @@ OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
 OR OTHER DEALINGS IN THE SOFTWARE.'''
 
-import torch
-from datasets import CelebASpoofDataset
-from torch.utils.data import DataLoader
-from utils import Transform
+import argparse
+
 import albumentations as A
 import cv2
+import torch
+from torch.utils.data import DataLoader
 from tqdm import tqdm
-import argparse
+
+from datasets import CelebASpoofDataset
+from utils import Transform
+
 
 def main():
     parser = argparse.ArgumentParser(description='mean and std computing')

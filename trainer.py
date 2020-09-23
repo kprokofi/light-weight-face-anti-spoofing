@@ -21,24 +21,28 @@ ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
 OR OTHER DEALINGS IN THE SOFTWARE.'''
 
 import argparse
+import os
+
+import numpy as np
 import torch
 import torch.nn as nn
-import torch.optim as optim
-from torch.utils.tensorboard import SummaryWriter
 import torch.nn.functional as F
+import torch.optim as optim
 from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-from utils import mixup_target, AverageMeter, load_checkpoint, save_checkpoint, precision, cutmix, make_dataset
-import os
+
 from eval_protocol import evaulate
-import numpy as np
+from utils import (AverageMeter, cutmix, load_checkpoint, make_dataset,
+                   mixup_target, precision, save_checkpoint)
+
 
 class Trainer:
-    def __init__(self, model, criterion, optimizer, args, config, train_loader, val_loader, test_loader):
+    def __init__(self, model, criterion, optimizer, device, config, train_loader, val_loader, test_loader):
         self.model = model
         self.criterion = criterion
         self.optimizer = optimizer
-        self.args = args
+        self.device = device
         self.config = config
         self.train_loader = train_loader
         self.val_loader = val_loader
@@ -60,16 +64,17 @@ class Trainer:
         self.model.train()
         loop = tqdm(enumerate(self.train_loader), total=len(self.train_loader), leave=False)
         for i, (input, target) in loop:
-            if self.cuda:
-                input = input.cuda(device=self.args.GPU)
-                target = target.cuda(device=self.args.GPU)
+            if i == self.config.test_steps:
+                break
+            input = input.to(self.device)
+            target = target.cuda(self.device)
             # compute output and loss
             if self.config.aug.type_aug:
                 if self.config.aug.type_aug == 'mixup':
-                    aug_output = mixup_target(input, target, self.config, self.args)
+                    aug_output = mixup_target(input, target, self.config, self.device)
                 else:
                     assert self.config.aug.type_aug == 'cutmix'
-                    aug_output = cutmix(input, target, self.config, self.args)
+                    aug_output = cutmix(input, target, self.config, self.device)
                 input, target_a, target_b, lam = aug_output
                 tuple_target = (target_a, target_b, lam)
                 if self.config.multi_task_learning:
@@ -126,9 +131,10 @@ class Trainer:
         loop = tqdm(enumerate(self.val_loader), total=len(self.val_loader), leave=False)
         criterion = self.criterion[0] if self.config.multi_task_learning else self.criterion
         for i, (input, target) in loop:
-            if self.cuda:
-                input = input.cuda(device=self.args.GPU)
-                target = target.cuda(device=self.args.GPU)
+            if i == self.config.test_steps:
+                break
+            input = input.cuda(self.device)
+            target = target.cuda(self.device)
             if len(target.shape) > 1:
                 target = target[:, 0].reshape(-1)
             # computing output and loss
@@ -162,10 +168,10 @@ class Trainer:
 
         return accuracy.avg
 
-    def eval(self, epoch: int, epoch_accuracy: float):
+    def eval(self, epoch: int, epoch_accuracy: float, save_checkpoint: bool=True):
         # evaluate on last 10 epoch and remember best accuracy, AUC, EER, ACER and then save checkpoint
-        if (epoch == 0 or epoch >=60) and (epoch_accuracy > self.current_accuracy) and (self.args.save_checkpoint):
-            AUC, EER, _ , apcer, bpcer, acer = evaulate(self.model, self.val_loader, self.config, self.args, compute_accuracy=False)
+        if (epoch == 0 or epoch >=60) and (epoch_accuracy > self.current_accuracy) and (save_checkpoint):
+            AUC, EER, apcer, bpcer, acer = evaulate(self.model, self.val_loader, self.config, self.device, compute_accuracy=False)
             print(f'__VAL__: epoch: {epoch}   AUC: {AUC}   EER: {EER}   APCER: {apcer}   BPCER: {bpcer}   ACER: {acer}')
             if acer < self.best_acer:
                 self.best_acer = acer
@@ -175,13 +181,13 @@ class Trainer:
                 self.current_eer = EER
                 self.current_auc = AUC
                 AUC, EER, accur, apcer, bpcer, acer, _, _ = evaulate(self.model, self.test_loader, self.config,
-                                                                     self.args, compute_accuracy=True) 
+                                                                     self.device, compute_accuracy=True) 
                 print(f'__TEST__: epoch: {epoch}  accur: {round(np.mean(accur),3)}   AUC: {AUC}   EER: {EER}    APCER: {apcer}   BPCER: {bpcer}   ACER: {acer}')
 
         # evaluate on val every 10 epoch except last one and save checkpoint
-        if (epoch%10 == 0) and (epoch not in (self.config.epochs.max_epoch - 1, 0, 60)) and (self.args.save_checkpoint):
+        if (epoch%10 == 0) and (epoch not in (self.config.epochs.max_epoch - 1, 0, 60)) and (save_checkpoint):
             # printing results
-            AUC, EER, accur, apcer, bpcer, acer, _, _ = evaulate(self.model, self.test_loader, self.config, self.args, compute_accuracy=True) 
+            AUC, EER, accur, apcer, bpcer, acer, _, _ = evaulate(self.model, self.test_loader, self.config, self.device, compute_accuracy=True) 
             print(f'epoch: {epoch}  accur: {round(np.mean(accur),3)}   AUC: {AUC}   EER: {EER}   APCER: {apcer}   BPCER: {bpcer}   ACER: {acer}')
             checkpoint = {'state_dict': self.model.state_dict(), 'optimizer': self.optimizer.state_dict(), 'epoch':epoch}
             save_checkpoint(checkpoint, f'{self.path_to_checkpoint}')
@@ -239,7 +245,7 @@ class Trainer:
             output = model1.make_logits(features)
             return output
 
-    def multi_task_criterion(self, output: tuple, target: torch.tensor, C: float=1., Cs: float=0.1, Ci: float=0.01, Cf: float=1.):
+    def multi_task_criterion(self, output: tuple, target: torch.tensor, C: float=1., Cs: float=0.5, Ci: float=0.1, Cf: float=1.):
         ''' output -> tuple of given losses
         target -> torch tensor of a shape [batch*num_tasks]
         return loss function '''
@@ -268,7 +274,7 @@ class Trainer:
 
             # filter output for real images and compute third loss
             mask = target[:,0] == 0
-            filtered_output = output[3][mask] 
+            filtered_output = output[3][mask]
             filtered_target = target[:,3:][mask].type(torch.float32)
             real_atr_loss = BCE(filtered_output, filtered_target)
         # combine losses
@@ -286,25 +292,25 @@ class Trainer:
 
     def test(self, transform, file_name, flag=None):
         if flag:
-            self.config.test_dataset.type = 'celeba-spoof'
-
+            self.config['test_dataset']['type'] = 'celeba-spoof'
         print('_____________EVAULATION_____________')
         # load snapshot
-        epoch_of_checkpoint = load_checkpoint(self.path_to_checkpoint, self.model, map_location=torch.device(f'cuda:{self.args.GPU}'), optimizer=None, strict=True)
+        epoch_of_checkpoint = load_checkpoint(self.path_to_checkpoint, self.model, map_location=self.device, optimizer=None, strict=True)
         # making dataset
         test_dataset = make_dataset(self.config, val_transform=transform, mode='eval')
         test_loader = DataLoader(dataset=test_dataset, batch_size=self.config.data.batch_size,
                                                     shuffle=True, pin_memory=self.config.data.pin_memory,
                                                     num_workers=self.config.data.data_loader_workers)
         # printing results
-        AUC, EER, accur, apcer, bpcer, acer, _, _ = evaulate(self.model, test_loader, self.config, self.args, compute_accuracy=True)
-        results = f'''accuracy on test data = {round(np.mean(accur),3)}\t\
-            AUC = {round(AUC,3)}\t\
-                    EER = {round(EER*100,2)}\t\
-                        apcer = {round(apcer*100,2)}\t\
-                            bpcer = {round(bpcer*100,2)}\t\
-                                acer = {round(acer*100,2)}\t\
-                                    checkpoint made on {epoch_of_checkpoint} epoch'''    
+        AUC, EER, accur, apcer, bpcer, acer, _, _ = evaulate(self.model, test_loader, self.config, self.device, compute_accuracy=True)
+        results = f'''accuracy on test data = {round(np.mean(accur),3)}\n
+        AUC = {round(AUC,3)}\n
+        EER = {round(EER*100,2)}\n
+        apcer = {round(apcer*100,2)}\n
+        bpcer = {round(bpcer*100,2)}\n
+        acer = {round(acer*100,2)}\n
+        checkpoint made on {epoch_of_checkpoint} epoch\n
+        {round(np.mean(accur),3)};;;{round(AUC,3)};;;{round(EER*100,2)};;;{round(apcer*100,2)};;;{round(bpcer*100,2)};;;{round(acer*100,2)}'''    
     
         with open(os.path.join(self.config.checkpoint.experiment_path, file_name), 'w') as f:
             f.write(results)

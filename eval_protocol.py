@@ -20,54 +20,64 @@ OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
 OR OTHER DEALINGS IN THE SOFTWARE.'''
 
-from sklearn.metrics import roc_curve, auc
-from sklearn import metrics
-import albumentations as A
-import torch
-import numpy as np
 import argparse
 import os
-from utils import make_loader, make_dataset, load_checkpoint, build_model, read_py_config, Transform
-from torch.utils.data import DataLoader
-import torch.nn.functional as F
-import matplotlib.pyplot as plt
-import matplotlib
-import torch.nn as nn
-from tqdm import tqdm
+
+import albumentations as A
 import cv2 as cv
+import matplotlib
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from sklearn import metrics
+from sklearn.metrics import auc, roc_curve
+from torch.utils.data import DataLoader
+from tqdm import tqdm
+
+from utils import (Transform, build_model, load_checkpoint, make_dataset,
+                   make_loader, read_py_config)
+
 
 def main():
-    current_dir = os.path.dirname(os.path.abspath(__file__))
+    # parsing arguments
     parser = argparse.ArgumentParser(description='antispoofing training')
     parser.add_argument('--draw_graph', default=False, type=bool, required=False, help='whether or not to draw graphics')
     parser.add_argument('--GPU', default=0, type=int, required=False, help='specify which GPU to use')
     parser.add_argument('--config', type=str, default=None, required=True,
                         help='path to configuration file')
+    parser.add_argument('--device', type=str, default='cuda', help='if you want to eval model on cpu, pass "cpu" param')
     args = parser.parse_args()
 
+    # reading config and manage device
     path_to_config = args.config
     config = read_py_config(path_to_config)
+    device = args.device + f':{args.GPU}' if args.device == 'cuda' else 'cpu'
+
+    # building model
+    # explicitly indicate to model, that we don't want to use imagenet weights
     config['model']['pretrained'] = False
-    model = build_model(config, args, strict=True)
-    model.cuda(device=args.GPU)
+    model = build_model(config, device, strict=True)
+    model.to(device)
     if config.data_parallel.use_parallel:
         model = torch.nn.DataParallel(model, **config.data_parallel.parallel_params)
     # load snapshot
     path_to_experiment = os.path.join(config.checkpoint.experiment_path, config.checkpoint.snapshot_name)
-    epoch_of_checkpoint = load_checkpoint(path_to_experiment, model, map_location=torch.device(f'cuda:{args.GPU}'), optimizer=None)
-    # preprocessing
+    epoch_of_checkpoint = load_checkpoint(path_to_experiment, model, map_location=device, optimizer=None)
+
+    # preprocessing, making dataset and loader
     normalize = A.Normalize(**config.img_norm_cfg)
     test_transform = A.Compose([
                 A.Resize(**config.resize, interpolation=cv.INTER_CUBIC),
                 normalize,
                 ])  
-    # making dataset and loader
     test_transform = Transform(val=test_transform)
     test_dataset = make_dataset(config, val_transform=test_transform, mode='eval')
     test_loader = DataLoader(dataset=test_dataset, batch_size=100, shuffle=True, num_workers=2)
-    # computing metrics
-    AUC, EER, accur, apcer, bpcer, acer, fpr, tpr  = evaulate(model, test_loader, config, args, compute_accuracy=True)
 
+    # computing metrics
+    AUC, EER, accur, apcer, bpcer, acer, fpr, tpr  = evaulate(model, test_loader, config, device, compute_accuracy=True)
     print(f'EER = {round(EER*100,2)}\n\
     accuracy on test data = {round(np.mean(accur),3)}\n\
     AUC = {round(AUC,3)}\n\
@@ -75,23 +85,24 @@ def main():
     bpcer = {round(bpcer*100,2)}\n\
     acer = {round(acer*100,2)}\n\
     checkpoint made on {epoch_of_checkpoint} epoch')
- 
+
+    # draw graphics if needed
     if args.draw_graph:
         fnr = 1 - tpr
         plot_ROC_curve(fpr, tpr, config)
         DETCurve(fpr, fnr, EER, config)
 
-def evaulate(model, loader, config, args, compute_accuracy=True):
-    ''' evaulating AUC, EER, ACER, BPCER, APCER on given data loader and model '''
+def evaulate(model, loader, config, device, compute_accuracy=True):
+    ''' evaulating AUC, EER, BPCER, APCER, ACER on given data loader and model '''
     model.eval()
     proba_accum = np.array([])
     target_accum = np.array([])
     accur=[]
     tp, tn, fp, fn = 0, 0, 0, 0
     for input, target in tqdm(loader):
-        input = input.cuda(device=args.GPU)
+        input = input.to(device)
         if len(target.shape) > 1:
-            target = target[:, 0].reshape(-1).cuda(device=args.GPU)
+            target = target[:, 0].reshape(-1).to(device)
         with torch.no_grad():
             features = model(input)
             if config.data_parallel.use_parallel:
@@ -107,7 +118,6 @@ def evaulate(model, loader, config, args, compute_accuracy=True):
             tn_batch, fp_batch, fn_batch, tp_batch = metrics.confusion_matrix(y_true=y_true, 
                                                                               y_pred=y_pred, 
                                                                               ).ravel()
-            
             tp += tp_batch
             tn += tn_batch
             fp += fp_batch
@@ -131,14 +141,10 @@ def evaulate(model, loader, config, args, compute_accuracy=True):
     fnr = 1 - tpr
     fpr_EER = fpr[np.nanargmin(np.absolute((fnr - fpr)))]
     fnr_EER = fnr[np.nanargmin(np.absolute((fnr - fpr)))]
-    if fpr_EER < fnr_EER:
-        EER = fpr_EER
-    else:
-        EER = fnr_EER
+    EER = min(fpr_EER, fnr_EER)
     AUC = auc(fpr, tpr)
-    if compute_accuracy:
-        return AUC, EER, accur, apcer, bpcer, acer, fpr, tpr
-    return AUC, EER, accur, apcer, bpcer, acer
+    return AUC, EER, accur, apcer, bpcer, acer, fpr, tpr if compute_accuracy else AUC, EER, apcer, bpcer, acer
+
 
 def plot_ROC_curve(fpr, tpr, config):
     plt.figure()
@@ -150,7 +156,6 @@ def plot_ROC_curve(fpr, tpr, config):
     plt.title('ROC curve', fontsize=16)
     plt.legend(loc='lower right', fontsize=13)
     plt.plot([0,1],[0,1], lw=3, linestyle='--', color='navy')
-    plt.axes().set_aspect('equal')
     plt.savefig(config.curves.det_curve)
 
 def DETCurve(fps,fns, EER, config):

@@ -1,3 +1,4 @@
 pytest
 pylint
 isort
+pytest-pylint

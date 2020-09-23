@@ -1,2 +1,2 @@
-from .am_softmax import AngleSimpleLinear, AMSoftmaxLoss
-from .soft_triple import SoftTripleLoss, SoftTripleLinear
+from .am_softmax import AMSoftmaxLoss, AngleSimpleLinear
+from .soft_triple import SoftTripleLinear, SoftTripleLoss

@@ -20,13 +20,14 @@ OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
 OR OTHER DEALINGS IN THE SOFTWARE.'''
 
-import torch.nn as nn
-import torch
-from .dropout import Dropout
-from .conv2d_cd import Conv2d_cd
 import math
+
+import torch
+import torch.nn as nn
 import torch.nn.functional as F
 
+from .conv2d_cd import Conv2d_cd
+from .dropout import Dropout
 
 __all__ = ['mobilenetv2']
 
@@ -110,7 +111,7 @@ class InvertedResidual(nn.Module):
 class MobileNetV2(nn.Module):
     def __init__(self, num_classes=1000, width_mult=1., prob_dropout=0.1, type_dropout='bernoulli', prob_dropout_linear=0.5, 
                                                                 embeding_dim=1280, mu=0.5, sigma=0.3, 
-                                                                theta=0, multi_heads=True):
+                                                                theta=0, multi_heads=True, to_forward=False):
         super(MobileNetV2, self).__init__()
         # setting of inverted residual blocks
         self.multi_heads = multi_heads
@@ -151,6 +152,8 @@ class MobileNetV2(nn.Module):
     def forward(self, x):
         x = self.features(x)
         x = self.conv_last(x)
+        if self.to_forward:
+            x = self.spoof_task(x)
         return x
         
     def make_logits(self, features):

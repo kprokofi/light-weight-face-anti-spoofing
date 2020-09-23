@@ -56,13 +56,15 @@ To start training create config file based on the default one and run 'train.py'
 ```bash
 sudo python3 train.py --config <path to config>;
 ```
-For additional parameters you can refer to help adding '--help'. For example, you can specify on which GPU you want to train your model. As you may notice, training pipeline supports parallel training and specified GPU in arguments must be the same as in configuration file for output GPU.
+For additional parameters you can refer to help adding '--help'. For example, you can specify on which GPU you want to train your model. If for some reasons you want to train on CPU, specify `--device` to 'cpu'. default device is cuda 0. As you may notice, training pipeline supports parallel training and specified GPU in arguments must be the same as in configuration file for output GPU.
 
 ## Testing
 To test your model set 'test_dataset' in config file to one of preferable dataset (available params: 'celeba-spoof', 'LCC_FASD', 'Casia'). Then run script:
 ```bash
 sudo python3 eval_protocol.py --config <path to config>;
 ```
+default device to do it is cuda 0.
+
 ## Convert a PyTorch Model to the OpenVINO™ Format
 To convert the obtained model, run the following command:
 ```bash
@@ -78,4 +80,4 @@ After preparation start demo by running:
 ```bash
 python3 demo/demo.py --fd_model /path_to_face_detecor.xml --spf_model /path_to_antispoofing_model.xml --cam_id 0;
 ```
-Refer to --help for additional parmeters. If you are using pytorch model then you need to specify training config with '--config' option.  
+Refer to `--help` for additional parameters. If you are using pytorch model then you need to specify training config with `--config` option. To run demo on the video, you should change `--cam_id` on `--video` option and specify your_video.mp4
