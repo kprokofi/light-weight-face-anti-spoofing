@@ -5,6 +5,6 @@ attrdict==2.0.1
 opencv-python==4.2.0.34
 numpy==1.19.1
 pandas==1.0.5
-sklearn == 0.23.2
+sklearn
 tqdm==4.48.0
 matplotlib==3.3.0

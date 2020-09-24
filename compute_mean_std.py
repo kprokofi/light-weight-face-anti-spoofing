@@ -49,7 +49,7 @@ def main():
     train_dataset = CelebASpoofDataset(root_folder, test_mode=False, transform=Transform(transforms), multi_learning=False)
     dataloader = DataLoader(train_dataset, batch_size=100, shuffle=True)
     mean, std = compute_mean_std(dataloader)
-    print(f'mean:{mean}, std:{std})
+    print(f'mean:{mean}, std:{std}')
 
 def compute_mean_std(loader):
     ''' based on next formulas: E[x] = sum(x*p) = sum(x)/N, D[X] = E[(X-E(X))**2] = E[X**2] - (E[x])**2'''
