@@ -5,7 +5,7 @@ import torch
 
 class TestONNXExport(unittest.TestCase):
     def setUp(self):
-        config = read_py_config('./configs/config100.py')
+        config = read_py_config('./configs/config.py')
         self.config = config
         self.model = build_model(config, device='cpu', strict=True, mode='convert')
         self.img_size = tuple(map(int, config.resize.values()))
