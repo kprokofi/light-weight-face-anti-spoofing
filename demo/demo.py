@@ -33,10 +33,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from ie_tools import load_ie_model
-from scipy.spatial.distance import cosine
 
-current_dir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
-parent_dir = os.path.dirname(current_dir)
+current_dir = osp.dirname(osp.abspath(inspect.getfile(inspect.currentframe())))
+parent_dir = osp.dirname(current_dir)
 sys.path.insert(0, parent_dir) 
 import utils
 
@@ -58,7 +57,7 @@ class FaceDetector:
     def __decode_detections(self, out, frame_shape):
         """Decodes raw SSD output"""
         detections = []
-
+        
         for detection in out[0, 0]:
             confidence = detection[2]
             if confidence > self.confidence:
@@ -107,12 +106,12 @@ class TorchCNN:
         mean = np.array(self.config.img_norm_cfg.mean).reshape(3,1,1)
         std = np.array(self.config.img_norm_cfg.std).reshape(3,1,1)
         height, width = list(self.config.resize.values())
-        for i in range(len(images)):
-            images[i] = cv.resize(images[i], (height, width) , interpolation=cv.INTER_CUBIC)
-            images[i] = cv.cvtColor(images[i], cv.COLOR_BGR2RGB)
-            images[i] = np.transpose(images[i], (2, 0, 1)).astype(np.float32)
-            images[i] = images[i]/255
-            images[i] = (images[i] - mean)/std
+        for img in images:
+            img = cv.resize(img, (height, width) , interpolation=cv.INTER_CUBIC)
+            img = cv.cvtColor(img, cv.COLOR_BGR2RGB)
+            img = np.transpose(img, (2, 0, 1)).astype(np.float32)
+            img = img/255
+            img = (img - mean)/std
         return torch.tensor(images, dtype=torch.float32)
 
     def forward(self, batch):
@@ -125,12 +124,12 @@ class TorchCNN:
         with torch.no_grad():
             features = model1.forward(batch)
             output = model1.spoof_task(features)
-            if type(output) == tuple:
+            if isinstance(output, tuple):
                 output = output[0]
             confidence = F.softmax(output, dim=-1).detach().numpy()
             return confidence
 
-def pred_spoof(frame, detections, spoof_model, config):
+def pred_spoof(frame, detections, spoof_model):
     """Get prediction for all detected faces on the frame"""
     faces = []
     for rect, _ in detections:
@@ -161,7 +160,7 @@ def draw_detections(frame, detections, confidence, thresh):
 
     return frame
 
-def run(params, capture, face_det, spoof_model, config):
+def run(params, capture, face_det, spoof_model):
     """Starts the anti spoofing demo"""
     fourcc = cv.VideoWriter_fourcc(*'MP4V')
     writer_video = cv.VideoWriter('output_video.mp4', fourcc, 24, (720,540))
@@ -171,7 +170,7 @@ def run(params, capture, face_det, spoof_model, config):
         if not has_frame:
             return
         detections = face_det.get_detections(frame)
-        confidence = pred_spoof(frame, detections, spoof_model, config)
+        confidence = pred_spoof(frame, detections, spoof_model)
         frame = draw_detections(frame, detections, confidence, params.spoof_thresh)
         cv.imshow(win_name, frame)
         writer_video.write(cv.resize(frame, (720,540)))
@@ -190,9 +189,10 @@ def main():
                         help='Configuration file')
     parser.add_argument('--fd_model', type=str, required=True)
     parser.add_argument('--fd_thresh', type=float, default=0.6, help='Threshold for FD')
-    parser.add_argument('--spoof_thresh', type=float, default=0.4, help='Threshold for predicting spoof/real. The lower the more model oriented on spoofs')
-    parser.add_argument('--spf_model', type=str, default=None, help='path to .pth checkpoint of model or .xml IR OpenVINO model', required=True)
-
+    parser.add_argument('--spoof_thresh', type=float, default=0.4, 
+                        help='Threshold for predicting spoof/real. The lower the more model oriented on spoofs')
+    parser.add_argument('--spf_model', type=str, default=None, 
+                        help='path to .pth checkpoint of model or .xml IR OpenVINO model', required=True)
     parser.add_argument('--device', type=str, default='CPU')
     parser.add_argument('--GPU', type=int, default=0, help='specify which GPU to use')
     parser.add_argument('-l', '--cpu_extension',
@@ -214,18 +214,16 @@ def main():
         log.info('Reading from {}'.format(args.video))
         cap = cv.VideoCapture(args.video)
         cap.set(cv.CAP_PROP_FOURCC, cv.VideoWriter_fourcc(*'MJPG'))
-        
     assert cap.isOpened()
-
     face_detector = FaceDetector(args.fd_model, args.fd_thresh, args.device, args.cpu_extension)
     if args.spf_model.endswith('pth.tar'):
         config.model.pretrained = False
         spoof_model = utils.build_model(config, args, strict=True)
-        spoof_model = TorchCNN(spoof_model, args.spf_model, config, divice=device)
+        spoof_model = TorchCNN(spoof_model, args.spf_model, config, device=device)
     else:
         spoof_model = VectorCNN(args.spf_model)
-    
-    run(args, cap, face_detector, spoof_model, config)
+    # running demo    
+    run(args, cap, face_detector, spoof_model)
 
 if __name__ == '__main__':
     main()

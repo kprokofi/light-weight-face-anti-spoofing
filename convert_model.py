@@ -33,30 +33,31 @@ from utils import build_model, load_checkpoint, read_py_config
 def main():
     # parse arguments
     parser = argparse.ArgumentParser(description='converting model to onnx')
-    parser.add_argument('--GPU', type=int, default=0, required=False, help='specify which gpu to use')
+    parser.add_argument('--GPU', type=int, default=0, required=False, 
+                        help='specify which gpu to use')
     parser.add_argument('--config', type=str, default=None, required=True,
-                            help='path to configuration file')
+                        help='path to configuration file')
     parser.add_argument('--model_path', type=str, default='MobileNetv3.onnx', required=False,
-                            help='path where to save the model in onnx format')
+                        help='path where to save the model in onnx format')
     parser.add_argument('--num_layers', type=int, default=16, required=False,
-                            help='number of the layers of your model to create required number of the input names')
+                        help='number of the layers of your model to create required number of the input names')
     parser.add_argument('--img_size', type=tuple, default=(128,128), required=False,
-                        help='height and width of the image to resize')                        
+                        help='height and width of the image to resize')
+    parser.add_argument('--device', type=str, default='cuda', 
+                        help='if you want to eval model on cpu, pass "cpu" param')                        
     args = parser.parse_args()
     # read config
     path_to_config = args.config
     config = read_py_config(path_to_config)
-    device = f'cuda:{args.GPU}' if config.data.cuda else f'cpu'
+    device = f'cuda:{args.GPU}' if args.device == 'cuda' else 'cpu'
     image_size = args.img_size
     save_path = args.model_path
     num_layers = args.num_layers
-    export_onnx(config, device=device, num_layers=num_layers, img_size=image_size, save_path=save_path)
+    export_onnx(config, device=device, num_layers=num_layers, 
+                img_size=image_size, save_path=save_path)
     
-
-def export_onnx(config, device='cuda:0', num_layers=16, img_size=(128,128), save_path='model.onnx'):
-    # fix some parametrs if config
-    config['model']['pretrained'] = False
-    config['model']['to_forward'] = True
+def export_onnx(config, device='cuda:0', num_layers=16, 
+                img_size=(128,128), save_path='model.onnx'):
     # get snapshot
     experiment_snapshot = config.checkpoint.snapshot_name
     experiment_path = config.checkpoint.experiment_path
@@ -64,19 +65,21 @@ def export_onnx(config, device='cuda:0', num_layers=16, img_size=(128,128), save
     # input to inference model
     dummy_input = torch.randn(1, 3, *img_size, device=device)
     # build model
-    model = build_model(config, device=device, strict=False)
+    model = build_model(config, device=device, strict=False, mode='convert')
     model.to(device)
 
     # if model trained as data parallel object
     if config.data_parallel.use_parallel:
         model = torch.nn.DataParallel(model, **config.data_parallel.parallel_params)
     # load checkpoint from config
-    load_checkpoint(path_to_experiment, model, map_location=torch.device(device), optimizer=None, strict=True)
+    load_checkpoint(path_to_experiment, model, map_location=torch.device(device), 
+                    optimizer=None, strict=True)
     # convert model to onnx
     model.eval()
     input_names = [ "actual_input_1" ] + [ "learned_%d" % i for i in range(num_layers) ]
     output_names = [ "output1" ]
-    torch.onnx.export(model, dummy_input, save_path, verbose=True, input_names=input_names, output_names=output_names)
+    torch.onnx.export(model, dummy_input, save_path, verbose=True, 
+                      input_names=input_names, output_names=output_names)
 
 if __name__=='__main__':
     main()

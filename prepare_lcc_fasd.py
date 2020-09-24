@@ -26,21 +26,15 @@ import os.path as osp
 import shutil
 
 import cv2 as cv
-import glog as log
-import numpy as np
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from openvino.inference_engine import IENetwork, IEPlugin
 from tqdm import tqdm
 
 from antispoofing.datasets import LCFAD
 from demo.demo import FaceDetector
-from demo.ie_tools import IEModel, load_ie_model
 
 
 def main():
     """Prepares data for the antispoofing recognition demo"""
+    # arguments parcing
     parser = argparse.ArgumentParser(description='prepare LCC FASD')
     parser.add_argument('--fd_model', type=str, required=True, help='path to fd model')
     parser.add_argument('--fd_thresh', type=float, default=0.6, help='Threshold for FD')
@@ -48,15 +42,15 @@ def main():
     parser.add_argument('--root_dir', type=str, required=True, help='LCC FASD root dir')
     parser = argparse.ArgumentParser(description='LCC_FASD')
     args = parser.parse_args()
-    
     face_detector = FaceDetector(args.fd_model, args.fd_thresh, args.device)
-    
     protocols = ['train', 'val', 'test']
     print('===> processing the data...')
-    save_dir = os.path.abspath(shutil.copytree(args.root_dir, './LCC_FASDcropped', ignore=shutil.ignore_patterns('*.png', '.*')))
-    dir_path = os.path.abspath(args.root_dir)
+    save_dir = osp.abspath(shutil.copytree(args.root_dir, './LCC_FASDcropped', 
+                           ignore=shutil.ignore_patterns('*.png', '.*')))
+    dir_path = osp.abspath(args.root_dir)
     for protocol in protocols:
-        data =  LCFAD(root_dir=args.root_dir, protocol=protocol, transform=None, get_img_path=True)
+        data =  LCFAD(root_dir=args.root_dir, protocol=protocol,
+                      transform=None, get_img_path=True)
         for image, path in tqdm(data, desc=protocol, total=len(data), leave=False):
             if image.any():
                 detection = face_detector.get_detections(image)

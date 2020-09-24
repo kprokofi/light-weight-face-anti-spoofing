@@ -25,16 +25,22 @@ from .celeba_spoof import CelebASpoofDataset
 from .lcc_fasd import LCFAD
 
 class MultiDataset(Dataset):
-    def __init__ (self, LCCFASD_root, Celeba_root, train=True, transform=None, LCFASD_train_protocol='combine_all', LCFASD_val_protocol='val_test'):
+    def __init__ (self, LCCFASD_root, Celeba_root, train=True, 
+                  transform=None, LCFASD_train_protocol='combine_all', 
+                  LCFASD_val_protocol='val_test'):
         if train:
-            self.dataset_celeba = CelebASpoofDataset(Celeba_root, test_mode=False, transform=transform, test_dataset=False, multi_learning=False)
-            self.dataset_lccfasd = LCFAD(LCCFASD_root, protocol=LCFASD_train_protocol, transform=transform)
+            self.dataset_celeba = CelebASpoofDataset(Celeba_root, test_mode=False, 
+                                                     transform=transform, multi_learning=False)
+            self.dataset_lccfasd = LCFAD(LCCFASD_root, protocol=LCFASD_train_protocol, 
+                                         transform=transform)
         else:
-            self.dataset_celeba = CelebASpoofDataset(Celeba_root, test_mode=True, transform=transform, test_dataset=False,  multi_learning=False)
-            self.dataset_lccfasd = LCFAD(LCCFASD_root, protocol=LCFASD_val_protocol, transform=transform)
-
+            self.dataset_celeba = CelebASpoofDataset(Celeba_root, test_mode=True, 
+                                                     transform=transform,  multi_learning=False)
+            self.dataset_lccfasd = LCFAD(LCCFASD_root, protocol=LCFASD_val_protocol, 
+                                         transform=transform)
         self.celeba_index = set(range(len(self.dataset_celeba)))
-        self.lccfasd_index = set(range(len(self.dataset_celeba), len(self.dataset_celeba) + len(self.dataset_lccfasd)))
+        self.lccfasd_index = set(range(len(self.dataset_celeba), 
+                                       len(self.dataset_celeba) + len(self.dataset_lccfasd)))
 
     def __len__(self):
         return len(self.dataset_celeba) + len(self.dataset_lccfasd)
@@ -42,7 +48,6 @@ class MultiDataset(Dataset):
     def __getitem__(self, indx):
         if indx in self.celeba_index:
             return self.dataset_celeba[indx]
-        else:
-            assert indx in self.lccfasd_index
-            indx = indx - len(self.dataset_celeba)
-            return self.dataset_lccfasd[indx]
+        assert indx in self.lccfasd_index
+        indx = indx - len(self.dataset_celeba)
+        return self.dataset_lccfasd[indx]

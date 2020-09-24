@@ -6,9 +6,9 @@ multi_task_learning = True
 
 evaulation = True
 
-datasets = dict(LCCFASD_root='./your_path_to_LCCFASD_root/', 
-                Celeba_root='./your_path_to_Celeba_root/',
-                Casia_root='./your_path_to_Casia_root/')
+datasets = dict(LCCFASD_root='./LCC_FASDcropped', 
+                Celeba_root='./CelebA_Spoof',
+                Casia_root='./CASIA')
 
 img_norm_cfg = dict(mean=[0.5931, 0.4690, 0.4229], 
                     std=[0.2471, 0.2214, 0.2157])
@@ -17,17 +17,15 @@ optimizer = dict(lr=0.005, momentum=0.9, weight_decay=5e-4)
 
 scheduler = dict(milestones=[20,40], gamma=0.2)
 
-data = dict(cuda=True, 
-            batch_size=256, 
+data = dict( batch_size=256, 
             data_loader_workers=4, 
             sampler=None, 
-            pin_memory=True, 
-            data_root='./your_path_to_data_root/')
+            pin_memory=True)
 
 resize = dict(height=128, width=128)
 
-checkpoint = dict(snapshot_name="your_checkpoint_name.pth.tar", 
-                  experiment_path='./your_path_to_experiment_folder/')
+checkpoint = dict(snapshot_name="MobileNet3.pth.tar", 
+                  experiment_path='./logs')
 
 loss = dict(loss_type='amsoftmax', 
             amsoftmax=dict(m=0.5, 
@@ -47,9 +45,7 @@ model= dict(model_type='Mobilenet3',
             use_amsoftmax=True, 
             pretrained=True, 
             embeding_dim=512, 
-            imagenet_weights='./pretrained/mobilenetv3-large-1cd25616.pth',
-            # do not change this
-            to_forward=False)
+            imagenet_weights='./pretrained/mobilenetv3-large-1cd25616.pth')
 
 aug = dict(type_aug=None, 
             alpha=0.5, 
@@ -76,5 +72,4 @@ test_dataset = dict(type='LCC_FASD')
 
 conv_cd = dict(theta=0)
 
-# don't change this
 test_steps=float('inf')

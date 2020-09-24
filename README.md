@@ -10,8 +10,6 @@ This repository contains training and evaulation pipeline with different regular
 ### Prerequisites
 
 * Python 3.6.9
-* torch==1.5.1
-* torchvision==0.6.1
 * OpenVINO™ 2020 R3 (or newer) with Python API
 ### Installation
 
@@ -43,20 +41,28 @@ Note that the new folder will be created and named as `<old name>cropped`. So to
 
 ### Configuration file
 The script for training and inference uses a configuration file. This is default [configuration file](./configs/config.py). You need to specify paths to datasets. Training pipeline supports following methods, which you can switch on and tune hyperparams while training:
-* RSC - representation self challenging, applied before global average pooling. p, b - quantile and probability applying it on image in current batch
-* aug - advanced augmentation, appropriate value for type is 'cutmix' or 'mixup. lambda = BetaDistribution(alpha, beta), cutmix_prob - probability of applying cutmix on image.
-* loss - there are available two possible losses: 'amsoftmax' with 'cos','arcos','cross_enropy' margins and 'soft_triple' with different number of inner classes. For more details about this soft triple loss see in [paper](https://arxiv.org/pdf/1909.05235.pdf)
-* curves - you can specify name of the curves, then set option '--draw_graph' to True when evaulate with eval_protocol.py script
-* data_parallel - you can train your network on several GPU
-* multi_task_learning - specify whether or not to train with multitask loss
-* conv_cd - this is option to switch on central difference convolutions instead of vanilla one changing value of theta from 0
+* **scheduler** - scheduler for dropping learning rate
+* **img_norm_cfg** - parameters for data normilization 
+* **data.sampler** - if it is True, then will be generated weights for `WeightedRandomSampler` object to uniform distribution of two classes
+* **RSC** - representation self challenging, applied before global average pooling. p, b - quantile and probability applying it on image in current batch
+* **aug** - advanced augmentation, appropriate value for type is 'cutmix' or 'mixup. lambda = BetaDistribution(alpha, beta), cutmix_prob - probability of applying cutmix on image.
+* **loss** - there are available two possible losses: 'amsoftmax' with 'cos','arcos','cross_enropy' margins and 'soft_triple' with different number of inner classes. For more details about this soft triple loss see in [paper](https://arxiv.org/pdf/1909.05235.pdf)
+* **loss.amsoftmax.ratio** - there are availablity to use different m for different classes. Ratio is weights on which provided `m` will be devided for specific class. For example ratio = [1,2] means that m for the first class will equal to m, but for the second will equal to m/2
+* **loss.amsoftmax.gamma** - if this constant differs from 0 then focal loss will be switched on with the correspodnig gamma
+* **For soft triple loss**: `Cn` - number of classes, `K` - number of proxies for each class, `tau` - parameter for regularisation number of proxies
+* **curves** - you can specify name of the curves, then set option '--draw_graph' to True when evaulate with eval_protocol.py script
+* **dropout** - 'bernoulli' and 'gaussian' dropout available 
+* **data_parallel** - you can train your network on several GPU
+* **multi_task**_learning - specify whether or not to train with multitask loss
+* **conv_cd** - this is option to switch on central difference convolutions instead of vanilla one changing value of theta from 0
+* **test_steps** - if you set this parameter for some int number, the algorithm will execute that many iterations for one epoch and stop. This will help you to test all processes (train,val, test)  
 
 ## Training
 To start training create config file based on the default one and run 'train.py':
 ```bash
 sudo python3 train.py --config <path to config>;
 ```
-For additional parameters you can refer to help adding '--help'. For example, you can specify on which GPU you want to train your model. If for some reasons you want to train on CPU, specify `--device` to 'cpu'. default device is cuda 0. As you may notice, training pipeline supports parallel training and specified GPU in arguments must be the same as in configuration file for output GPU.
+For additional parameters you can refer to help adding '--help'. For example, you can specify on which GPU you want to train your model. If for some reasons you want to train on CPU, specify `--device` to 'cpu'. default device is cuda 0.
 
 ## Testing
 To test your model set 'test_dataset' in config file to one of preferable dataset (available params: 'celeba-spoof', 'LCC_FASD', 'Casia'). Then run script:

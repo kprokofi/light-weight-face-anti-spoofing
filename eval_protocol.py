@@ -43,11 +43,14 @@ from utils import (Transform, build_model, load_checkpoint, make_dataset,
 def main():
     # parsing arguments
     parser = argparse.ArgumentParser(description='antispoofing training')
-    parser.add_argument('--draw_graph', default=False, type=bool, required=False, help='whether or not to draw graphics')
-    parser.add_argument('--GPU', default=0, type=int, required=False, help='specify which GPU to use')
+    parser.add_argument('--draw_graph', default=False, type=bool, required=False, 
+                        help='whether or not to draw graphics')
+    parser.add_argument('--GPU', default=0, type=int, required=False, 
+                        help='specify which GPU to use')
     parser.add_argument('--config', type=str, default=None, required=True,
                         help='path to configuration file')
-    parser.add_argument('--device', type=str, default='cuda', help='if you want to eval model on cpu, pass "cpu" param')
+    parser.add_argument('--device', type=str, default='cuda', 
+                        help='if you want to eval model on cpu, pass "cpu" param')
     args = parser.parse_args()
 
     # reading config and manage device
@@ -56,12 +59,10 @@ def main():
     device = args.device + f':{args.GPU}' if args.device == 'cuda' else 'cpu'
 
     # building model
-    # explicitly indicate to model, that we don't want to use imagenet weights
-    config['model']['pretrained'] = False
-    model = build_model(config, device, strict=True)
+    model = build_model(config, device, strict=True, mode='eval')
     model.to(device)
     if config.data_parallel.use_parallel:
-        model = torch.nn.DataParallel(model, **config.data_parallel.parallel_params)
+        model = nn.DataParallel(model, **config.data_parallel.parallel_params)
     # load snapshot
     path_to_experiment = os.path.join(config.checkpoint.experiment_path, config.checkpoint.snapshot_name)
     epoch_of_checkpoint = load_checkpoint(path_to_experiment, model, map_location=device, optimizer=None)
@@ -70,7 +71,7 @@ def main():
     normalize = A.Normalize(**config.img_norm_cfg)
     test_transform = A.Compose([
                 A.Resize(**config.resize, interpolation=cv.INTER_CUBIC),
-                normalize,
+                normalize
                 ])  
     test_transform = Transform(val=test_transform)
     test_dataset = make_dataset(config, val_transform=test_transform, mode='eval')
@@ -110,7 +111,7 @@ def evaulate(model, loader, config, device, compute_accuracy=True):
             else:
                 model1 = model
             output = model1.spoof_task(features)
-            if type(output)==tuple:
+            if isinstance(output, tuple):
                 output = output[0]
 
             y_true = target.detach().cpu().numpy()
@@ -125,7 +126,7 @@ def evaulate(model, loader, config, device, compute_accuracy=True):
 
             if compute_accuracy:
                 accur.append((y_pred == y_true).mean())
-            if config.loss.loss_type == 'amsoftmax':
+            if config.loss.amsoftmax.margin_type in ('cos', 'arcos'):
                 output *= config.loss.amsoftmax.s
             if config.loss.loss_type == 'soft_triple':
                 output *= config.loss.soft_triple.s

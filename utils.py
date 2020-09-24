@@ -113,7 +113,8 @@ def precision(output, target, s=None):
 
 def mixup_target(input, target, config, device, num_classes=2):
     # compute mix-up augmentation
-    input, target_a, target_b, lam = mixup_data(input, target, config.aug.alpha, config.aug.beta, device)
+    input, target_a, target_b, lam = mixup_data(input, target, config.aug.alpha, 
+                                                config.aug.beta, device)
     return input, target_a, target_b, lam
 
 def mixup_data(x, y, alpha=1.0, beta=1.0, device='cuda:0'):
@@ -176,7 +177,8 @@ def freeze_layers(model, open_layers):
             for p in module.parameters():
                 p.requires_grad = False
 
-def make_dataset(config: dict, train_transform: object = None, val_transform: object = None, mode='train', eval_protocol='standart'):
+def make_dataset(config: dict, train_transform: object = None, val_transform: object = None, 
+                mode='train'):
     ''' make train, val or test datasets '''
     celeba_root = config.datasets.Celeba_root
     lccfasd_root = config.datasets.LCCFASD_root
@@ -202,7 +204,7 @@ def make_dataset(config: dict, train_transform: object = None, val_transform: ob
         return train, val
 
     if mode == 'eval':
-        if config.test_dataset.type == 'LCC_FASD' and config.dataset == 'celeba-spoof':
+        if  config.test_dataset.type == 'LCC_FASD' and config.dataset == 'celeba-spoof':
             test = LCFAD(root_dir=lccfasd_root, protocol='combine_all', transform=val_transform)
         elif config.test_dataset.type == 'LCC_FASD':
             assert config.dataset != 'celeba-spoof'
@@ -210,7 +212,8 @@ def make_dataset(config: dict, train_transform: object = None, val_transform: ob
         elif config.test_dataset.type == 'Casia':
             test = CasiaSurfDataset(protocol=1, dir=casia_root, mode='test', transform=val_transform)
         elif config.test_dataset.type == 'celeba-spoof':
-            test = CelebASpoofDataset(root_folder=celeba_root, test_mode=True, transform=val_transform, multi_learning=config.multi_task_learning)
+            test = CelebASpoofDataset(root_folder=celeba_root, test_mode=True, transform=val_transform, 
+                                      multi_learning=config.multi_task_learning)
         return test
 
 def make_loader(train, val, config, sampler=None):
@@ -229,7 +232,7 @@ def make_loader(train, val, config, sampler=None):
                                                 num_workers=config.data.data_loader_workers)
     return train_loader, val_loader
 
-def build_model(config, device, strict=True):
+def build_model(config, device, strict=True, mode='train'):
     ''' build model and change layers depends on loss type'''
     parameters = dict(prob_dropout=config.dropout.prob_dropout,
                     type_dropout=config.dropout.type,
@@ -238,43 +241,48 @@ def build_model(config, device, strict=True):
                     embeding_dim=config.model.embeding_dim,
                     prob_dropout_linear = config.dropout.classifier,
                     theta=config.conv_cd.theta,
-                    multi_heads = config.multi_task_learning,
-                    to_forward=config.model.to_forward)
+                    multi_heads = config.multi_task_learning)
 
     if config.model.model_type == 'Mobilenet2':
         model = mobilenetv2(**parameters)
 
-        if config.model.pretrained:
+        if config.model.pretrained and mode == "train":
             checkpoint_path = config.model.imagenet_weights
             load_checkpoint(checkpoint_path, model, strict=strict, map_location=device)
-        
+        elif mode == 'convert':
+            model.forward = model.forward_to_onnx
+
         if (config.loss.loss_type == 'amsoftmax') and (config.loss.amsoftmax.margin_type != 'cross_entropy'):
             model.spoofer = AngleSimpleLinear(config.model.embeding_dim, 2)
-
         elif config.loss.loss_type == 'soft_triple':
-            model.spoofer = SoftTripleLinear(config.model.embeding_dim, 2, num_proxies=config.loss.soft_triple.K)
+            model.spoofer = SoftTripleLinear(config.model.embeding_dim, 2, 
+                                             num_proxies=config.loss.soft_triple.K)
     else:
         assert config.model.model_type == 'Mobilenet3'
         if config.model.model_size == 'large':
             model = mobilenetv3_large(**parameters)
 
-            if config.model.pretrained:
+            if config.model.pretrained and mode == "train":
                 checkpoint_path = config.model.imagenet_weights
                 load_checkpoint(checkpoint_path, model, strict=strict, map_location=device)
+            elif mode == 'convert':
+                model.forward = model.forward_to_onnx
         else:
             assert config.model.model_size == 'small'
             model = mobilenetv3_small(**parameters)
 
-            if config.model.pretrained:
+            if config.model.pretrained and mode == "train":
                 checkpoint_path = config.model.imagenet_weights
                 load_checkpoint(checkpoint_path, model, strict=strict, map_location=device)
+            elif mode == 'convert':
+                model.forward = model.forward_to_onnx
 
         if (config.loss.loss_type == 'amsoftmax') and (config.loss.amsoftmax.margin_type != 'cross_entropy'):
             model.spoofer[3] = AngleSimpleLinear(config.model.embeding_dim, 2)
 
         elif config.loss.loss_type == 'soft_triple':
             model.spoofer[3] = SoftTripleLinear(config.model.embeding_dim, 2, num_proxies=config.loss.soft_triple.K)
-
+    
     return model
 
 def build_criterion(config, device, task='main'):
@@ -332,8 +340,7 @@ def make_weights(config):
         else:
             assert label == 0
             weights[int(key)] = 0.2
-
     assert len(weights) == n
-    return weights
+    return n, weights
 
 

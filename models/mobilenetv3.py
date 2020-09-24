@@ -52,7 +52,7 @@ def _make_divisible(v, divisor, min_value=None):
 
 class h_sigmoid(nn.Module):
     def __init__(self, inplace=True):
-        super(h_sigmoid, self).__init__()
+        super().__init__()
         self.relu = nn.ReLU6(inplace=inplace)
 
     def forward(self, x):
@@ -61,15 +61,16 @@ class h_sigmoid(nn.Module):
 
 class h_swish(nn.Module):
     def __init__(self, inplace=True):
-        super(h_swish, self).__init__()
+        super().__init__()
         self.sigmoid = h_sigmoid(inplace=inplace)
 
     def forward(self, x):
         return x * self.sigmoid(x)
 
+
 class SELayer(nn.Module):
     def __init__(self, channel, reduction=4):
-        super(SELayer, self).__init__()
+        super().__init__()
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.fc = nn.Sequential(
                 nn.Linear(channel, _make_divisible(channel // reduction, 8)),
@@ -111,6 +112,8 @@ def conv_1x1_in(inp, oup, theta):
         nn.InstanceNorm2d(oup),
         h_swish()
     )
+
+
 class InvertedResidual(nn.Module):
     def __init__(self, inp, hidden_dim, oup, kernel_size, stride, use_se, use_hs, prob_dropout, type_dropout, sigma, mu, theta):
         super(InvertedResidual, self).__init__()
@@ -154,14 +157,14 @@ class InvertedResidual(nn.Module):
 
 
 class MobileNetV3(nn.Module):
-    def __init__(self, cfgs, mode, prob_dropout, type_dropout, prob_dropout_linear=0.5, 
-                                                                embeding_dim=1280, mu=0.5, sigma=0.3, 
-                                                                num_classes=1000, width_mult=1., theta=0, 
-                                                                multi_heads=True, to_forward=False):
-        super(MobileNetV3, self).__init__()
+    def __init__(self, cfgs, mode, prob_dropout, type_dropout, 
+                 prob_dropout_linear=0.5, 
+                 embeding_dim=1280, mu=0.5, sigma=0.3, 
+                 num_classes=1000, width_mult=1., 
+                 theta=0, multi_heads=True):
+        super().__init__()
         # setting of inverted residual blocks
         self.cfgs = cfgs
-        self.to_forward = to_forward
         self.prob_dropout = prob_dropout
         self.type_dropout = type_dropout
         self.mu = mu
@@ -220,10 +223,17 @@ class MobileNetV3(nn.Module):
     def forward(self, x):
         x = self.features(x)
         x = self.conv_last(x)
-        if self.to_forward:
-            x = self.spoof_task(x)
         return x
-        
+    
+    def forward_to_onnx(self,x):
+        x = self.features(x)
+        x = self.conv_last(x)
+        x = self.avgpool(x)
+        x = x.view(x.size(0), -1)
+        spoof_out = self.spoofer(x)
+        probab = F.softmax(spoof_out, dim=-1)
+        return probab
+
     def make_logits(self, features):
         output = self.avgpool(features)
         output = output.view(output.size(0), -1)
@@ -288,11 +298,9 @@ def mobilenetv3_small(**kwargs):
 
 def test():
     model = mobilenetv3_large(prob_dropout=0.2, type_dropout='gaussian')
-    for i in range(10):
-        model.train()
-        x = torch.randn(10,3,128,128)
-        y = model(x)
-        out = model.make_logits(y)
+    x = torch.randn(10,3,128,128)
+    y = model(x)
+    out = model.make_logits(y)
     print(len(out))
 
 if __name__ == '__main__':

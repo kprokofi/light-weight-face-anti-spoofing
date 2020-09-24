@@ -8,7 +8,7 @@ class Dropout(nn.Module):
     DISTRIBUTIONS = ['bernoulli', 'gaussian', 'none']
 
     def __init__(self, p=0.5, mu=0.5, sigma=0.3, dist='bernoulli'):
-        super(Dropout, self).__init__()
+        super().__init__()
 
         self.dist = dist
         assert self.dist in Dropout.DISTRIBUTIONS

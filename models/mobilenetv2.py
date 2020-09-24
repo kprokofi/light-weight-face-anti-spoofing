@@ -50,7 +50,6 @@ def _make_divisible(v, divisor, min_value=None):
         new_v += divisor
     return new_v
 
-
 def conv_3x3_bn(inp, oup, stride, theta):
     return nn.Sequential(
         Conv2d_cd(inp, oup, 3, stride, 1, bias=False, theta=theta),
@@ -58,6 +57,12 @@ def conv_3x3_bn(inp, oup, stride, theta):
         nn.ReLU6(inplace=True)
     )
 
+def conv_3x3_in(inp, oup, stride, theta):
+    return nn.Sequential(
+        Conv2d_cd(inp, oup, 3, stride, 1, bias=False, theta=theta),
+        nn.InstanceNorm2d(oup),
+        nn.ReLU6(inplace=True)
+    )
 
 def conv_1x1_bn(inp, oup, theta):
     return nn.Sequential(
@@ -66,16 +71,22 @@ def conv_1x1_bn(inp, oup, theta):
         nn.ReLU6(inplace=True)
     )
 
+def conv_1x1_in(inp, oup, theta):
+    return nn.Sequential(
+        Conv2d_cd(inp, oup, 1, 1, 0, bias=False, theta=theta),
+        nn.InstanceNorm2d(oup),
+        nn.ReLU6(inplace=True)
+    )
+
 
 class InvertedResidual(nn.Module):
-    def __init__(self, inp, oup, stride, expand_ratio,  prob_dropout, type_dropout, sigma, mu, theta):
-        super(InvertedResidual, self).__init__()
+    def __init__(self, inp, oup, stride, expand_ratio,  
+                 prob_dropout, type_dropout, sigma, mu, theta):
+        super().__init__()
         assert stride in [1, 2]
-
         hidden_dim = round(inp * expand_ratio)
         self.identity = stride == 1 and inp == oup
         self.dropout2d = Dropout(dist=type_dropout, sigma=sigma, mu=mu, p=prob_dropout)
-
         if expand_ratio == 1:
             self.conv = nn.Sequential(
                 # dw
@@ -109,10 +120,10 @@ class InvertedResidual(nn.Module):
 
 
 class MobileNetV2(nn.Module):
-    def __init__(self, num_classes=1000, width_mult=1., prob_dropout=0.1, type_dropout='bernoulli', prob_dropout_linear=0.5, 
-                                                                embeding_dim=1280, mu=0.5, sigma=0.3, 
-                                                                theta=0, multi_heads=True, to_forward=False):
-        super(MobileNetV2, self).__init__()
+    def __init__(self, num_classes=1000, width_mult=1., prob_dropout=0.1, type_dropout='bernoulli', 
+                 prob_dropout_linear=0.5, embeding_dim=1280, mu=0.5, sigma=0.3, 
+                 theta=0, multi_heads=True, to_forward=False):
+        super().__init__()
         # setting of inverted residual blocks
         self.multi_heads = multi_heads
         self.cfgs = [
@@ -140,7 +151,6 @@ class MobileNetV2(nn.Module):
                 input_channel = output_channel
         self.features = nn.Sequential(*layers)
         # building last several layers
-        output_channel = _make_divisible(1280 * width_mult, 4 if width_mult == 0.1 else 8) if width_mult > 1.0 else 1280
         self.conv_last = conv_1x1_bn(input_channel, embeding_dim, theta=theta)
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.spoofer = nn.Linear(embeding_dim, 2)
@@ -155,7 +165,16 @@ class MobileNetV2(nn.Module):
         if self.to_forward:
             x = self.spoof_task(x)
         return x
-        
+
+    def forward_to_onnx(self,x):
+        x = self.features(x)
+        x = self.conv_last(x)
+        x = self.avgpool(x)
+        x = x.view(x.size(0), -1)
+        spoof_out = self.spoofer(x)
+        probab = F.softmax(spoof_out, dim=-1)
+        return probab    
+
     def make_logits(self, features):
         output = self.avgpool(features)
         output = output.view(output.size(0), -1)

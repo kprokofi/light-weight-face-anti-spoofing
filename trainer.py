@@ -38,7 +38,8 @@ from utils import (AverageMeter, cutmix, load_checkpoint, make_dataset,
 
 
 class Trainer:
-    def __init__(self, model, criterion, optimizer, device, config, train_loader, val_loader, test_loader):
+    def __init__(self, model, criterion, optimizer, device, 
+                 config, train_loader, val_loader, test_loader):
         self.model = model
         self.criterion = criterion
         self.optimizer = optimizer
@@ -85,7 +86,8 @@ class Trainer:
                 if self.config.multi_task_learning:
                     loss = self.multi_task_criterion(output, tuple_target)  
                 else:
-                    loss = self.mixup_criterion(self.criterion, output, target_a, target_b, lam, 2)
+                    loss = self.mixup_criterion(self.criterion, output, 
+                                                target_a, target_b, lam, 2)
             else:
                 new_target = (F.one_hot(target[:,0], num_classes=2) 
                             if self.config.multi_task_learning 
@@ -111,14 +113,15 @@ class Trainer:
 
             # write to writer for tensorboard
             self.writer.add_scalar('Train/loss', loss, global_step=self.train_step)
-            self.writer.add_scalar('Train/accuracy',  accuracy.avg, global_step=self.train_step)
+            self.writer.add_scalar('Train/accuracy', accuracy.avg, global_step=self.train_step)
             self.train_step += 1
 
             # update progress bar
             max_epochs = self.config.epochs.max_epoch
             loop.set_description(f'Epoch [{epoch}/{max_epochs}]')
             loop.set_postfix(loss=loss.item(), avr_loss = losses.avg, 
-                             acc=acc, avr_acc=accuracy.avg, lr=self.optimizer.param_groups[0]['lr'])
+                             acc=acc, avr_acc=accuracy.avg, 
+                             lr=self.optimizer.param_groups[0]['lr'])
         return losses.avg, accuracy.avg
 
     def validate(self):
@@ -171,25 +174,34 @@ class Trainer:
     def eval(self, epoch: int, epoch_accuracy: float, save_checkpoint: bool=True):
         # evaluate on last 10 epoch and remember best accuracy, AUC, EER, ACER and then save checkpoint
         if (epoch == 0 or epoch >=60) and (epoch_accuracy > self.current_accuracy) and (save_checkpoint):
-            AUC, EER, apcer, bpcer, acer = evaulate(self.model, self.val_loader, self.config, self.device, compute_accuracy=False)
-            print(f'__VAL__: epoch: {epoch}   AUC: {AUC}   EER: {EER}   APCER: {apcer}   BPCER: {bpcer}   ACER: {acer}')
+            AUC, EER, apcer, bpcer, acer = evaulate(self.model, self.val_loader, 
+                                                    self.config, self.device, compute_accuracy=False)
+            print(f'__VAL__: epoch: {epoch}   AUC: {AUC}   EER: {EER}   APCER: {apcer}\
+                   BPCER: {bpcer}   ACER: {acer}')
             if acer < self.best_acer:
                 self.best_acer = acer
-                checkpoint = {'state_dict': self.model.state_dict(), 'optimizer': self.optimizer.state_dict(), 'epoch': epoch}
+                checkpoint = {'state_dict': self.model.state_dict(), 
+                              'optimizer': self.optimizer.state_dict(), 'epoch': epoch}
                 save_checkpoint(checkpoint, f'{self.path_to_checkpoint}')
                 self.current_accuracy = epoch_accuracy
                 self.current_eer = EER
                 self.current_auc = AUC
                 AUC, EER, accur, apcer, bpcer, acer, _, _ = evaulate(self.model, self.test_loader, self.config,
                                                                      self.device, compute_accuracy=True) 
-                print(f'__TEST__: epoch: {epoch}  accur: {round(np.mean(accur),3)}   AUC: {AUC}   EER: {EER}    APCER: {apcer}   BPCER: {bpcer}   ACER: {acer}')
+                print(f'__TEST__: epoch: {epoch}  accur: {round(np.mean(accur),3)}   AUC: {AUC}   EER: {EER}\
+                        APCER: {apcer}   BPCER: {bpcer}   ACER: {acer}')
 
         # evaluate on val every 10 epoch except last one and save checkpoint
-        if (epoch%10 == 0) and (epoch not in (self.config.epochs.max_epoch - 1, 0, 60)) and (save_checkpoint):
+        if ((epoch%10 == 0) and (epoch not in (self.config.epochs.max_epoch - 1, 0, 60)) 
+            and (save_checkpoint)):
             # printing results
-            AUC, EER, accur, apcer, bpcer, acer, _, _ = evaulate(self.model, self.test_loader, self.config, self.device, compute_accuracy=True) 
-            print(f'epoch: {epoch}  accur: {round(np.mean(accur),3)}   AUC: {AUC}   EER: {EER}   APCER: {apcer}   BPCER: {bpcer}   ACER: {acer}')
-            checkpoint = {'state_dict': self.model.state_dict(), 'optimizer': self.optimizer.state_dict(), 'epoch':epoch}
+            AUC, EER, accur, apcer, bpcer, acer, _, _ = evaulate(self.model, self.test_loader, 
+                                                                 self.config, self.device, 
+                                                                 compute_accuracy=True) 
+            print(f'epoch: {epoch}  accur: {round(np.mean(accur),3)}\
+                   AUC: {AUC}   EER: {EER}   APCER: {apcer}   BPCER: {bpcer}   ACER: {acer}')
+            checkpoint = {'state_dict': self.model.state_dict(), 
+                          'optimizer': self.optimizer.state_dict(), 'epoch':epoch}
             save_checkpoint(checkpoint, f'{self.path_to_checkpoint}')
 
     def make_output(self, input: torch.tensor, target: torch.tensor):
@@ -206,17 +218,23 @@ class Trainer:
                 model1 = self.model
             # do everything after convolutions layers, strating with avg pooling
             all_tasks_output = model1.make_logits(features)
-            logits = all_tasks_output[0] if self.config.multi_task_learning else all_tasks_output
-            if type(logits) == tuple:
+            logits = (all_tasks_output[0] 
+                      if self.config.multi_task_learning 
+                      else all_tasks_output)
+            if isinstance(logits, tuple):
                 logits = logits[0]
             # take a derivative, make tensor, shape as features, but gradients insted features
             if self.config.aug.type_aug:
                 fold_target = target.argmax(dim=1)
                 target = F.one_hot(fold_target, num_classes=target.shape[1]) 
             target_logits = torch.sum(logits*target, dim=1)
-            gradients = torch.autograd.grad(target_logits, features, grad_outputs=torch.ones_like(target_logits), create_graph=True)[0]
+            gradients = torch.autograd.grad(target_logits, features, 
+                                            grad_outputs=torch.ones_like(target_logits), 
+                                            create_graph=True)[0]
             # get value of 1-p quatile
-            quantile = torch.tensor(np.quantile(a=gradients.data.cpu().numpy(), q=1-self.config.RSC.p, axis=(1,2,3)), device=input.device)
+            quantile = torch.tensor(np.quantile(a=gradients.data.cpu().numpy(), 
+                                                q=1-self.config.RSC.p, axis=(1,2,3)), 
+                                                device=input.device)
             quantile = quantile.reshape(input.size(0),1,1,1)
             # create mask
             mask = gradients < quantile
@@ -232,7 +250,9 @@ class Trainer:
             random_mask = random_uniform <= self.config.RSC.b
             output = torch.where(random_mask, new_logits, logits)
             if self.config.loss.loss_type == 'soft_triple':
-                output = (output, all_tasks_output[0][1]) if self.config.multi_task_learning else (output, all_tasks_output[1])
+                output = ((output, all_tasks_output[0][1]) 
+                          if self.config.multi_task_learning 
+                          else (output, all_tasks_output[1]))
             output = (output, *all_tasks_output[1:])
             return output
         else:
@@ -245,7 +265,7 @@ class Trainer:
             output = model1.make_logits(features)
             return output
 
-    def multi_task_criterion(self, output: tuple, target: torch.tensor, C: float=1., Cs: float=0.5, Ci: float=0.1, Cf: float=1.):
+    def multi_task_criterion(self, output: tuple, target: torch.tensor, C: float=1., Cs: float=0.01, Ci: float=0.1, Cf: float=1.):
         ''' output -> tuple of given losses
         target -> torch tensor of a shape [batch*num_tasks]
         return loss function '''
@@ -259,7 +279,8 @@ class Trainer:
             lightning_loss = self.mixup_criterion(CE, output[2], y_a=target_a[:,2], 
                                                                 y_b=target_b[:,2],
                                                                 lam=lam, num_classes=5)
-            real_atr_loss = lam*BCE(output[3], target_a[:,3:].type(torch.float32)) + (1-lam)*BCE(output[3], target_b[:,3:].type(torch.float32))
+            real_atr_loss = lam*BCE(output[3], target_a[:,3:].type(torch.float32)) + (1-lam)*BCE(output[3], 
+                                    target_b[:,3:].type(torch.float32))
 
         else:
             # spoof loss, take derivitive
@@ -295,14 +316,17 @@ class Trainer:
             self.config['test_dataset']['type'] = 'celeba-spoof'
         print('_____________EVAULATION_____________')
         # load snapshot
-        epoch_of_checkpoint = load_checkpoint(self.path_to_checkpoint, self.model, map_location=self.device, optimizer=None, strict=True)
+        epoch_of_checkpoint = load_checkpoint(self.path_to_checkpoint, self.model, 
+                                              map_location=self.device, optimizer=None, 
+                                              strict=True)
         # making dataset
         test_dataset = make_dataset(self.config, val_transform=transform, mode='eval')
         test_loader = DataLoader(dataset=test_dataset, batch_size=self.config.data.batch_size,
                                                     shuffle=True, pin_memory=self.config.data.pin_memory,
                                                     num_workers=self.config.data.data_loader_workers)
         # printing results
-        AUC, EER, accur, apcer, bpcer, acer, _, _ = evaulate(self.model, test_loader, self.config, self.device, compute_accuracy=True)
+        AUC, EER, accur, apcer, bpcer, acer, _, _ = evaulate(self.model, test_loader, self.config, 
+                                                             self.device, compute_accuracy=True)
         results = f'''accuracy on test data = {round(np.mean(accur),3)}\n
         AUC = {round(AUC,3)}\n
         EER = {round(EER*100,2)}\n
@@ -310,7 +334,8 @@ class Trainer:
         bpcer = {round(bpcer*100,2)}\n
         acer = {round(acer*100,2)}\n
         checkpoint made on {epoch_of_checkpoint} epoch\n
-        {round(np.mean(accur),3)};;;{round(AUC,3)};;;{round(EER*100,2)};;;{round(apcer*100,2)};;;{round(bpcer*100,2)};;;{round(acer*100,2)}'''    
+        {round(np.mean(accur),3)};;;{round(AUC,3)};;;{round(EER*100,2)};;;\
+            {round(apcer*100,2)};;;{round(bpcer*100,2)};;;{round(acer*100,2)}'''    
     
         with open(os.path.join(self.config.checkpoint.experiment_path, file_name), 'w') as f:
             f.write(results)

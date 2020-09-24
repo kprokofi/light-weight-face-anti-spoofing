@@ -43,16 +43,20 @@ def main():
     # parse arguments
     parser = argparse.ArgumentParser(description='antispoofing training')
     parser.add_argument('--GPU', type=int, default=0, help='specify which gpu to use')
-    parser.add_argument('--save_checkpoint', type=bool, default=True, help='whether or not to save your model')
-    parser.add_argument('--config', type=str, default=None, required=True, help='Configuration file')
-    parser.add_argument('--device', type=str, default='cuda', help='if you want to train model on cpu, pass "cpu" param')
-    
+    parser.add_argument('--save_checkpoint', type=bool, default=True, 
+                        help='whether or not to save your model')
+    parser.add_argument('--config', type=str, default=None, required=True, 
+                        help='Configuration file')
+    parser.add_argument('--device', type=str, default='cuda', choices=['cuda','cpu'], 
+                        help='if you want to train model on cpu, pass "cpu" param')
     args = parser.parse_args()
 
     # manage device, arguments, reading config
-    device = args.device + f':{args.GPU}' if args.device == 'cuda' else 'cpu'
     path_to_config = args.config
     config = read_py_config(path_to_config)
+    device = args.device + f':{args.GPU}' if args.device == 'cuda' else 'cpu'
+    if config.data_parallel.use_parallel:
+        device = f'cuda:{config.data_parallel.parallel_params.output_device}'
 
     # launch training, validation, testing
     train(config, device, args.save_checkpoint)
@@ -65,7 +69,8 @@ def train(config, device='cuda:0', save_checkpoint=True):
                             A.Resize(**config.resize, interpolation=cv.INTER_CUBIC),
                             A.HorizontalFlip(p=0.5),
                             A.augmentations.transforms.ISONoise(color_shift=(0.15,0.35), intensity=(0.2, 0.5), p=0.2),
-                            A.augmentations.transforms.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, brightness_by_max=True, always_apply=False, p=0.3),
+                            A.augmentations.transforms.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, 
+                                                                                brightness_by_max=True, always_apply=False, p=0.3),
                             A.augmentations.transforms.MotionBlur(blur_limit=5, p=0.2),
                             normalize
                             ])
@@ -73,7 +78,8 @@ def train(config, device='cuda:0', save_checkpoint=True):
                             A.Resize(**config.resize, interpolation=cv.INTER_CUBIC),
                             A.HorizontalFlip(p=0.5),
                             A.augmentations.transforms.ISONoise(color_shift=(0.15,0.35), intensity=(0.2, 0.5), p=0.2),
-                            A.augmentations.transforms.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, brightness_by_max=True, always_apply=False, p=0.3),
+                            A.augmentations.transforms.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, 
+                                                                                brightness_by_max=True, always_apply=False, p=0.3),
                             A.augmentations.transforms.MotionBlur(blur_limit=5, p=0.2),
                             normalize
                             ])
@@ -85,8 +91,8 @@ def train(config, device='cuda:0', save_checkpoint=True):
     # load data
     sampler = config.data.sampler
     if sampler:
-        weights = make_weights(config)
-        sampler = torch.utils.data.WeightedRandomSampler(weights, 494185, replacement=True)
+        num_instances, weights = make_weights(config)
+        sampler = torch.utils.data.WeightedRandomSampler(weights, num_instances, replacement=True)
     train_transform = Transform(train_spoof=train_transform_spoof, train_real=train_transform_real, val=None)
     val_transform = Transform(train_spoof=None, train_real=None, val=val_transform)
     train_dataset, val_dataset = make_dataset(config, train_transform, val_transform)
@@ -97,7 +103,7 @@ def train(config, device='cuda:0', save_checkpoint=True):
                                                 num_workers=config.data.data_loader_workers)
     
     # build model and put it to cuda and if it needed then wrap model to data parallel
-    model = build_model(config, device=device, strict=False)
+    model = build_model(config, device=device, strict=False, mode='train')
     model.to(device)
     if config.data_parallel.use_parallel:
         model = torch.nn.DataParallel(model, **config.data_parallel.parallel_params)

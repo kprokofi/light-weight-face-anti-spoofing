@@ -2,11 +2,11 @@ sudo: false
 language:
   - python
 python:
-  - "3.8"
+  - "3.6.9"
 before_install:
   - pip install -r requirements.txt
 script:
-  - python3 -m pytest --pylint --pylint-rcfile=./pylint.rc --pylint-error-types=EF --pylint-jobs=4
-  - python3 tests.py --verbose
+  - python -m pytest --pylint --pylint-rcfile=./pylint.rc --pylint-error-types=EF --pylint-jobs=4
+  - python tests.py --verbose
 notifications:
   email: false
