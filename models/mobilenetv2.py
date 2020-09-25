@@ -124,6 +124,7 @@ class MobileNetV2(nn.Module):
         super().__init__()
         # setting of inverted residual blocks
         self.multi_heads = multi_heads
+        self.prob_dropout_linear = prob_dropout_linear
         self.cfgs = [
             # t, c, n, s
             [1,  16, 1, 1],

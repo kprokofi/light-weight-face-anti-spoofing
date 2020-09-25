@@ -216,8 +216,7 @@ def main():
     assert cap.isOpened()
     face_detector = FaceDetector(args.fd_model, args.fd_thresh, args.device, args.cpu_extension)
     if args.spf_model.endswith('pth.tar'):
-        config.model.pretrained = False
-        spoof_model = utils.build_model(config, args, strict=True)
+        spoof_model = utils.build_model(config, args, strict=True, mode='eval')
         spoof_model = TorchCNN(spoof_model, args.spf_model, config, device=device)
     else:
         spoof_model = VectorCNN(args.spf_model)
