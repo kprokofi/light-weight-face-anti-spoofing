@@ -271,10 +271,10 @@ class Trainer:
         if self.config.aug.type_aug:
             target_a, target_b, lam = target
             spoof_loss = self.mixup_criterion(softmax, output[0], target_a[:,0], target_b[:,0], lam, 2)
-            spoof_type_loss = self.mixup_criterion(CE, output[1], y_a=target_a[:,1],
+            spoof_type_loss = self.mixup_criterion(cross_entropy, output[1], y_a=target_a[:,1],
                                                                 y_b=target_b[:,1],
                                                                 lam=lam, num_classes=11)
-            lightning_loss = self.mixup_criterion(CE, output[2], y_a=target_a[:,2],
+            lightning_loss = self.mixup_criterion(cross_entropy, output[2], y_a=target_a[:,2],
                                                                 y_b=target_b[:,2],
                                                                 lam=lam, num_classes=5)
             real_atr_loss = lam*bce(output[3], target_a[:,3:].type(torch.float32)) + (1-lam)*bce(output[3],

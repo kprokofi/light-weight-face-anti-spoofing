@@ -192,8 +192,8 @@ def make_dataset(config: dict, train_transform: object = None, val_transform: ob
             val = CelebASpoofDataset(root_folder=celeba_root, test_mode=True, 
                                      transform=val_transform, multi_learning=config.multi_task_learning)
         elif config.dataset == 'Casia':
-            train = CasiaSurfDataset(protocol=1, dir=casia_root, mode='train', transform=train_transform)
-            val = CasiaSurfDataset(protocol=1, dir=casia_root, mode='dev', transform=val_transform)
+            train = CasiaSurfDataset(protocol=1, dir_=casia_root, mode='train', transform=train_transform)
+            val = CasiaSurfDataset(protocol=1, dir_=casia_root, mode='dev', transform=val_transform)
         elif config.dataset == 'multi_dataset':
             train = MultiDataset(lccfasd_root, celeba_root, train=True, transform=train_transform, 
                                  LCFASD_train_protocol='combine_all', LCFASD_val_protocol='val_test')
@@ -208,7 +208,7 @@ def make_dataset(config: dict, train_transform: object = None, val_transform: ob
             assert config.dataset != 'celeba-spoof'
             test = LCFAD(root_dir=lccfasd_root, protocol='test', transform=val_transform)
         elif config.test_dataset.type == 'Casia':
-            test = CasiaSurfDataset(protocol=1, dir=casia_root, mode='test', transform=val_transform)
+            test = CasiaSurfDataset(protocol=1, dir_=casia_root, mode='test', transform=val_transform)
         elif config.test_dataset.type == 'celeba-spoof':
             test = CelebASpoofDataset(root_folder=celeba_root, test_mode=True, transform=val_transform, 
                                       multi_learning=config.multi_task_learning)

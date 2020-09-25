@@ -79,10 +79,10 @@ def main():
     test_loader = DataLoader(dataset=test_dataset, batch_size=100, shuffle=True, num_workers=2)
 
     # computing metrics
-    auc, eer, accur, apcer, bpcer, acer, fpr, tpr  = evaulate(model, test_loader, config, device, compute_accuracy=True)
+    auc_, eer, accur, apcer, bpcer, acer, fpr, tpr  = evaulate(model, test_loader, config, device, compute_accuracy=True)
     print(f'eer = {round(eer*100,2)}\n\
     accuracy on test data = {round(np.mean(accur),3)}\n\
-    auc = {round(auc,3)}\n\
+    auc = {round(auc_,3)}\n\
     apcer = {round(apcer*100,2)}\n\
     bpcer = {round(bpcer*100,2)}\n\
     acer = {round(acer*100,2)}\n\
@@ -144,8 +144,8 @@ def evaulate(model, loader, config, device, compute_accuracy=True):
     fpr_eer = fpr[np.nanargmin(np.absolute((fnr - fpr)))]
     fnr_eer = fnr[np.nanargmin(np.absolute((fnr - fpr)))]
     eer = min(fpr_eer, fnr_eer)
-    auc = auc(fpr, tpr)
-    return auc, eer, accur, apcer, bpcer, acer, fpr, tpr if compute_accuracy else auc, eer, apcer, bpcer, acer
+    auc_ = auc(fpr, tpr)
+    return auc_, eer, accur, apcer, bpcer, acer, fpr, tpr if compute_accuracy else auc_, eer, apcer, bpcer, acer
 
 def plot_roc_curve(fpr, tpr, config):
     plt.figure()
@@ -159,7 +159,7 @@ def plot_roc_curve(fpr, tpr, config):
     plt.plot([0,1],[0,1], lw=3, linestyle='--', color='navy')
     plt.savefig(config.curves.det_curve)
 
-def det_curve(fps,fns, EER, config):
+def det_curve(fps,fns, eer, config):
     """
     Given false positive and false negative rates, produce a DET Curve.
     The false positive rate is assumed to be increasing while the false

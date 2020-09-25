@@ -55,7 +55,7 @@ def main():
     # launch training, validation, testing
     train(config, device, args.save_checkpoint)
 
-def train(config, device='cuda:0', save_checkpoint=True):
+def train(config, device='cuda:0', save_chkpt=True):
     ''' procedure launching all main functions of training, validation and testing pipelines'''
     # preprocessing data
     normalize = A.Normalize(**config.img_norm_cfg)
@@ -135,7 +135,7 @@ def train(config, device='cuda:0', save_checkpoint=True):
         accuracy = trainer.validate()
 
         # eval metrics such as AUC, APCER, BPCER, ACER on val and test dataset according to rule
-        trainer.eval(epoch, accuracy, save_checkpoint=save_checkpoint)
+        trainer.eval(epoch, accuracy, save_chkpt=save_chkpt)
         # for testing purposes 
         if config.test_steps:
             break
