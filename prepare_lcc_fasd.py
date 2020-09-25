@@ -44,7 +44,7 @@ def main():
     face_detector = FaceDetector(args.fd_model, args.fd_thresh, args.device)
     protocols = ['train', 'val', 'test']
     print('===> processing the data...')
-    save_dir = osp.abspath(shutil.copytree(args.root_dir, './LCC_FASDcropped', 
+    save_dir = osp.abspath(shutil.copytree(args.root_dir, './LCC_FASDcropped',
                            ignore=shutil.ignore_patterns('*.png', '.*')))
     dir_path = osp.abspath(args.root_dir)
     for protocol in protocols:
@@ -56,11 +56,11 @@ def main():
                 if detection:
                     rect, _ = detection[0]
                     left, top, right, bottom = rect
-                    image1=image[top:bottom, left:right] 
+                    image1=image[top:bottom, left:right]
                     if not image1.any():
                         print(f'bad crop, {path}')
                     else:
-                        new_path = path.replace(dir_path, save_dir) 
+                        new_path = path.replace(dir_path, save_dir)
                         cv.imwrite(new_path, image1)
                 else:
                     print(f'bad crop, {path}')

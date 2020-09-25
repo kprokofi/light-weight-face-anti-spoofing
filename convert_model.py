@@ -23,9 +23,7 @@ OR OTHER DEALINGS IN THE SOFTWARE.'''
 import argparse
 import os
 
-import onnx
 import torch
-import torchvision
 
 from utils import build_model, load_checkpoint, read_py_config
 
@@ -67,7 +65,6 @@ def export_onnx(config, device='cuda:0', num_layers=16,
     # build model
     model = build_model(config, device=device, strict=False, mode='convert')
     model.to(device)
-
     # if model trained as data parallel object
     if config.data_parallel.use_parallel:
         model = torch.nn.DataParallel(model, **config.data_parallel.parallel_params)

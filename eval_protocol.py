@@ -37,7 +37,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from utils import (Transform, build_model, load_checkpoint, make_dataset,
-                   make_loader, read_py_config)
+                   read_py_config)
 
 
 def main():
@@ -63,6 +63,7 @@ def main():
     model.to(device)
     if config.data_parallel.use_parallel:
         model = nn.DataParallel(model, **config.data_parallel.parallel_params)
+
     # load snapshot
     path_to_experiment = os.path.join(config.checkpoint.experiment_path, config.checkpoint.snapshot_name)
     epoch_of_checkpoint = load_checkpoint(path_to_experiment, model, map_location=device, optimizer=None)
@@ -78,10 +79,10 @@ def main():
     test_loader = DataLoader(dataset=test_dataset, batch_size=100, shuffle=True, num_workers=2)
 
     # computing metrics
-    AUC, EER, accur, apcer, bpcer, acer, fpr, tpr  = evaulate(model, test_loader, config, device, compute_accuracy=True)
-    print(f'EER = {round(EER*100,2)}\n\
+    auc, eer, accur, apcer, bpcer, acer, fpr, tpr  = evaulate(model, test_loader, config, device, compute_accuracy=True)
+    print(f'eer = {round(eer*100,2)}\n\
     accuracy on test data = {round(np.mean(accur),3)}\n\
-    AUC = {round(AUC,3)}\n\
+    auc = {round(auc,3)}\n\
     apcer = {round(apcer*100,2)}\n\
     bpcer = {round(bpcer*100,2)}\n\
     acer = {round(acer*100,2)}\n\
@@ -90,8 +91,8 @@ def main():
     # draw graphics if needed
     if args.draw_graph:
         fnr = 1 - tpr
-        plot_ROC_curve(fpr, tpr, config)
-        DETCurve(fpr, fnr, EER, config)
+        plot_roc_curve(fpr, tpr, config)
+        det_curve(fpr, fnr, eer, config)
 
 def evaulate(model, loader, config, device, compute_accuracy=True):
     ''' evaulating AUC, EER, BPCER, APCER, ACER on given data loader and model '''
@@ -100,12 +101,12 @@ def evaulate(model, loader, config, device, compute_accuracy=True):
     target_accum = np.array([])
     accur=[]
     tp, tn, fp, fn = 0, 0, 0, 0
-    for input, target in tqdm(loader):
-        input = input.to(device)
+    for image, target in tqdm(loader):
+        image = image.to(device)
         if len(target.shape) > 1:
             target = target[:, 0].reshape(-1).to(device)
         with torch.no_grad():
-            features = model(input)
+            features = model(image)
             if config.data_parallel.use_parallel:
                 model1 = model.module
             else:
@@ -140,14 +141,13 @@ def evaulate(model, loader, config, device, compute_accuracy=True):
 
     fpr, tpr, _ = roc_curve(target_accum, proba_accum, pos_label=1)
     fnr = 1 - tpr
-    fpr_EER = fpr[np.nanargmin(np.absolute((fnr - fpr)))]
-    fnr_EER = fnr[np.nanargmin(np.absolute((fnr - fpr)))]
-    EER = min(fpr_EER, fnr_EER)
-    AUC = auc(fpr, tpr)
-    return AUC, EER, accur, apcer, bpcer, acer, fpr, tpr if compute_accuracy else AUC, EER, apcer, bpcer, acer
+    fpr_eer = fpr[np.nanargmin(np.absolute((fnr - fpr)))]
+    fnr_eer = fnr[np.nanargmin(np.absolute((fnr - fpr)))]
+    eer = min(fpr_eer, fnr_eer)
+    auc = auc(fpr, tpr)
+    return auc, eer, accur, apcer, bpcer, acer, fpr, tpr if compute_accuracy else auc, eer, apcer, bpcer, acer
 
-
-def plot_ROC_curve(fpr, tpr, config):
+def plot_roc_curve(fpr, tpr, config):
     plt.figure()
     plt.xlim([-0.01, 1.00])
     plt.ylim([-0.01, 1.00])
@@ -159,14 +159,14 @@ def plot_ROC_curve(fpr, tpr, config):
     plt.plot([0,1],[0,1], lw=3, linestyle='--', color='navy')
     plt.savefig(config.curves.det_curve)
 
-def DETCurve(fps,fns, EER, config):
+def det_curve(fps,fns, EER, config):
     """
     Given false positive and false negative rates, produce a DET Curve.
     The false positive rate is assumed to be increasing while the false
     negative rate is assumed to be decreasing.
     """
     fig,ax = plt.subplots(figsize=(8,8))
-    plt.plot(fps,fns, label=f"DET curve, EER%={round(EER*100, 3)}")
+    plt.plot(fps,fns, label=f"DET curve, EER%={round(eer*100, 3)}")
     plt.yscale('log')
     plt.xscale('log')
     plt.xlabel('FAR', fontsize=16)

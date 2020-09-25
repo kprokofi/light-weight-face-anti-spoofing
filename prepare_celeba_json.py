@@ -66,6 +66,5 @@ def create_json(mode, root_folder):
     with open(save_file, 'w') as f:
         json.dump(items, f)
 
-        
 if __name__ == '__main__':
     main()

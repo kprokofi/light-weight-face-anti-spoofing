@@ -47,7 +47,7 @@ class SoftTripleLinear(nn.Module):
         prob = F.softmax(similarities * self.gamma, dim=2)
         sim_class = torch.sum(prob * similarities, dim=2)
 
-        if self.train:
+        if self.traininig:
             return sim_class, proxies_norm.t().matmul(proxies_norm)
 
         return sim_class
@@ -66,11 +66,11 @@ class SoftTripleLoss(nn.Module):
             for j in range(0, K):
                 self.weight[i*K+j, i*K+j+1:(i+1)*K] = 1
 
-    def forward(self, input, target):
+    def forward(self, input_, target):
         ''' target - one hot '''
         # fold one_hot to one vector [batch size] (need to do it when label smooth or augmentations used)
         fold_target = target.argmax(dim=1)
-        simClass, simCenter = input
+        simClass, simCenter = input_
         pred = F.log_softmax(self.s * (simClass - F.one_hot(fold_target, simClass.shape[1]) * self.m), dim=-1)
         lossClassify = torch.mean(torch.sum(-target * pred, dim=-1))
 
@@ -79,4 +79,3 @@ class SoftTripleLoss(nn.Module):
             return lossClassify + self.tau * reg
         else:
             return lossClassify
-

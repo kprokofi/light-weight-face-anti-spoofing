@@ -1,7 +1,12 @@
 import unittest
-from utils import read_py_config, build_model, check_file_exist
-from convert_model import export_onnx
 import torch
+
+from utils import read_py_config, build_model, check_file_exist
+
+
+class ExportError(Exception):
+    pass
+
 
 class TestONNXExport(unittest.TestCase):
     def setUp(self):
@@ -16,7 +21,8 @@ class TestONNXExport(unittest.TestCase):
             self.model.eval()
             torch.onnx.export(self.model, dummy_input, './mobilenetv3.onnx', verbose=False)
             check_file_exist('./mobilenetv3.onnx')
-        except:
+        except ExportError:
             self.fail("Exception raised while exporting to ONNX")
+
 if __name__ == '__main__':
     unittest.main()

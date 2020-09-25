@@ -1,17 +1,17 @@
 '''MIT License
 
 Copyright (C) 2020 Prokofiev Kirill
- 
+
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"),
 to deal in the Software without restriction, including without limitation
 the rights to use, copy, modify, merge, publish, distribute, sublicense,
 and/or sell copies of the Software, and to permit persons to whom
 the Software is furnished to do so, subject to the following conditions:
- 
+
 The above copyright notice and this permission notice shall be included
 in all copies or substantial portions of the Software.
- 
+
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
 OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
@@ -29,16 +29,13 @@ from importlib import import_module
 
 import numpy as np
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 from attrdict import AttrDict as adict
-from torch.autograd import Variable
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 
 from datasets import LCFAD, CasiaSurfDataset, CelebASpoofDataset, MultiDataset
 from losses import (AMSoftmaxLoss, AngleSimpleLinear, SoftTripleLinear,
                     SoftTripleLoss)
-from models import Dropout, mobilenetv2, mobilenetv3_large, mobilenetv3_small
+from models import mobilenetv2, mobilenetv3_large, mobilenetv3_small
 
 
 class AverageMeter(object):
@@ -95,7 +92,8 @@ def load_checkpoint(checkpoint_path, net, map_location, optimizer=None, load_opt
     else:
         missing_keys, unexpected_keys = (', '.join(i) for i in net.load_state_dict(checkpoint, strict=strict))
     if missing_keys or unexpected_keys:
-        logging.warning(f'NEXT KEYS HAVE NOT BEEN LOADED:\n\nmissing keys: {missing_keys}\n\nunexpected keys: {unexpected_keys}\n')
+        logging.warning(f'NEXT KEYS HAVE NOT BEEN LOADED:\n\nmissing keys: {missing_keys}\
+            \n\nunexpected keys: {unexpected_keys}\n')
         print('proceed traning ...')
     if load_optimizer:
         optimizer.load_state_dict(checkpoint['optimizer'])
@@ -106,16 +104,16 @@ def precision(output, target, s=None):
     """Compute the precision"""
     if s:
         output = output*s
-    if type(output) == tuple:
+    if isinstance(output, tuple):
         output = output[0].data
     accuracy = (output.argmax(dim=1) == target).float().mean().item()
     return accuracy*100
 
-def mixup_target(input, target, config, device, num_classes=2):
+def mixup_target(input_, target, config, device):
     # compute mix-up augmentation
-    input, target_a, target_b, lam = mixup_data(input, target, config.aug.alpha, 
+    input_, target_a, target_b, lam = mixup_data(input_, target, config.aug.alpha, 
                                                 config.aug.beta, device)
-    return input, target_a, target_b, lam
+    return input_, target_a, target_b, lam
 
 def mixup_data(x, y, alpha=1.0, beta=1.0, device='cuda:0'):
     '''Returns mixed inputs, pairs of targets, and lambda'''
@@ -131,38 +129,38 @@ def mixup_data(x, y, alpha=1.0, beta=1.0, device='cuda:0'):
     y_a, y_b = y, y[index]
     return mixed_x, y_a, y_b, lam
 
-def cutmix(input, target, config, device='cuda:0', num_classes=2):
+def cutmix(input_, target, config, device='cuda:0'):
     r = np.random.rand(1)
     if (config.aug.beta > 0) and (config.aug.alpha > 0) and (r < config.aug.cutmix_prob):
         # generate mixed sample
         lam = np.random.beta(config.aug.alpha > 0, config.aug.beta > 0)
-        rand_index = torch.randperm(input.size()[0]).to(device)
-        bbx1, bby1, bbx2, bby2 = rand_bbox(input.size(), lam)
-        input[:, :, bbx1:bbx2, bby1:bby2] = input[rand_index, :, bbx1:bbx2, bby1:bby2]
+        rand_index = torch.randperm(input_.size()[0]).to(device)
+        bbx1, bby1, bbx2, bby2 = rand_bbox(input_.size(), lam)
+        input_[:, :, bbx1:bbx2, bby1:bby2] = input_[rand_index, :, bbx1:bbx2, bby1:bby2]
         # adjust lambda to exactly match pixel ratio
-        lam = 1 - ((bbx2 - bbx1) * (bby2 - bby1) / (input.size()[-1] * input.size()[-2]))
+        lam = 1 - ((bbx2 - bbx1) * (bby2 - bby1) / (input_.size()[-1] * input_.size()[-2]))
         target_a = target
         target_b = target[rand_index]
-        return input, target_a, target_b, lam
+        return input_, target_a, target_b, lam
 
-    return input, target, target, 0
+    return input_, target, target, 0
 
 
 def rand_bbox(size, lam):
-    W = size[2]
-    H = size[3]
+    w = size[2]
+    h = size[3]
     cut_rat = np.sqrt(1. - lam)
-    cut_w = np.int(W * cut_rat)
-    cut_h = np.int(H * cut_rat)
+    cut_w = np.int(w * cut_rat)
+    cut_h = np.int(h * cut_rat)
 
     # uniform
-    cx = np.random.randint(W)
-    cy = np.random.randint(H)
+    cx = np.random.randint(w)
+    cy = np.random.randint(h)
 
-    bbx1 = np.clip(cx - cut_w // 2, 0, W)
-    bby1 = np.clip(cy - cut_h // 2, 0, H)
-    bbx2 = np.clip(cx + cut_w // 2, 0, W)
-    bby2 = np.clip(cy + cut_h // 2, 0, H)
+    bbx1 = np.clip(cx - cut_w // 2, 0, w)
+    bby1 = np.clip(cy - cut_h // 2, 0, h)
+    bbx2 = np.clip(cx + cut_w // 2, 0, w)
+    bby2 = np.clip(cy + cut_h // 2, 0, h)
 
     return bbx1, bby1, bbx2, bby2
 
@@ -342,5 +340,3 @@ def make_weights(config):
             weights[int(key)] = 0.2
     assert len(weights) == n
     return n, weights
-
-

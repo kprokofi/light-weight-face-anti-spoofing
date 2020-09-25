@@ -20,8 +20,6 @@ OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
 OR OTHER DEALINGS IN THE SOFTWARE.'''
 
-import math
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -120,9 +118,9 @@ class InvertedResidual(nn.Module):
 
 
 class MobileNetV2(nn.Module):
-    def __init__(self, num_classes=1000, width_mult=1., prob_dropout=0.1, type_dropout='bernoulli', 
+    def __init__(self, width_mult=1., prob_dropout=0.1, type_dropout='bernoulli', 
                  prob_dropout_linear=0.5, embeding_dim=1280, mu=0.5, sigma=0.3, 
-                 theta=0, multi_heads=True, to_forward=False):
+                 theta=0, multi_heads=True):
         super().__init__()
         # setting of inverted residual blocks
         self.multi_heads = multi_heads
@@ -145,9 +143,11 @@ class MobileNetV2(nn.Module):
         for t, c, n, s in self.cfgs:
             output_channel = _make_divisible(c * width_mult, 4 if width_mult == 0.1 else 8)
             for i in range(n):
-                layers.append(block(input_channel, output_channel, s if i == 0 else 1, t, prob_dropout=prob_dropout, 
-                                                                                          type_dropout=type_dropout, 
-                                                                                          mu=mu, sigma=sigma, theta=theta))
+                layers.append(block(input_channel, output_channel, 
+                                    s if i == 0 else 1, t, 
+                                    prob_dropout=prob_dropout, 
+                                    type_dropout=type_dropout, 
+                                    mu=mu, sigma=sigma, theta=theta))
                 input_channel = output_channel
         self.features = nn.Sequential(*layers)
         # building last several layers
@@ -162,8 +162,6 @@ class MobileNetV2(nn.Module):
     def forward(self, x):
         x = self.features(x)
         x = self.conv_last(x)
-        if self.to_forward:
-            x = self.spoof_task(x)
         return x
 
     def forward_to_onnx(self,x):

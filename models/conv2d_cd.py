@@ -1,17 +1,17 @@
 '''MIT License
 
 Copyright (C) 2020 Prokofiev Kirill
- 
+
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"),
 to deal in the Software without restriction, including without limitation
 the rights to use, copy, modify, merge, publish, distribute, sublicense,
 and/or sell copies of the Software, and to permit persons to whom
 the Software is furnished to do so, subject to the following conditions:
- 
+
 The above copyright notice and this permission notice shall be included
 in all copies or substantial portions of the Software.
- 
+
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
 OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
@@ -36,6 +36,7 @@ class Conv2d_cd(nn.Module):
         self.theta_limit = theta
         self.bias = bias or None
         self.stride = stride
+        self.dilation = dilation
         self.groups = groups
         if self.groups > 1:
             self.weight = nn.Parameter(kaiming_init(out_channels, in_channels//in_channels, kernel_size))
@@ -46,19 +47,19 @@ class Conv2d_cd(nn.Module):
 
     def forward(self, x):
         if self.training and self.theta < self.theta_limit and self.theta_limit != 0:
+            # adapt theta for first 10k iterations
             self.theta = -0.000000000476190*self.i**2+0.000074761904762*self.i-0.000000000000003
             self.i +=1
-        out_normal = F.conv2d(input=x, weight=self.weight, bias=self.bias, 
+        out_normal = F.conv2d(input=x, weight=self.weight, bias=self.bias, dilation=self.dilation,
                               stride=self.stride, padding=self.padding, groups=self.groups)
         if math.fabs(self.theta - 0.0) < 1e-8:
             return out_normal
         else:
-            [C_out, C_in, kernel_size, kernel_size] = self.weight.shape
             kernel_diff = self.weight.sum(2).sum(2)
             kernel_diff = kernel_diff[:, :, None, None]
-            out_diff = F.conv2d(input=x, weight=kernel_diff, bias=self.bias, 
+            out_diff = F.conv2d(input=x, weight=kernel_diff, bias=self.bias, dilation=self.dilation,
                                 stride=self.stride, padding=0, groups=self.groups)
             return out_normal - self.theta * out_diff
 
-def kaiming_init(C_out, C_in, k):
-    return torch.randn(C_out, C_in, k, k)*math.sqrt(2./C_in)
+def kaiming_init(c_out, c_in, k):
+    return torch.randn(c_out, c_in, k, k)*math.sqrt(2./c_in)

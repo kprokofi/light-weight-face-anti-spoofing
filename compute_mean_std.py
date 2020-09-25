@@ -38,7 +38,6 @@ def main():
                         help='path to root folder of the CelebA_Spoof')
     parser.add_argument('--img_size', type=tuple, default=(128,128), required=False,
                         help='height and width of the image to resize')
-
     args = parser.parse_args()
     # transform image 
     transforms = A.Compose([
@@ -46,7 +45,9 @@ def main():
                                 A.Normalize(mean=[0, 0, 0], std=[1, 1, 1])
                                 ])
     root_folder = args.root
-    train_dataset = CelebASpoofDataset(root_folder, test_mode=False, transform=Transform(transforms), multi_learning=False)
+    train_dataset = CelebASpoofDataset(root_folder, test_mode=False, 
+                                       transform=Transform(transforms), 
+                                       multi_learning=False)
     dataloader = DataLoader(train_dataset, batch_size=100, shuffle=True)
     mean, std = compute_mean_std(dataloader)
     print(f'mean:{mean}, std:{std}')
@@ -58,10 +59,9 @@ def compute_mean_std(loader):
         channels_sum += torch.mean(data, dim=[0,2,3])
         channels_squared_sum += torch.mean(data**2, dim=[0,2,3])
         num_batches += 1
-
     mean = channels_sum/num_batches
     std = (channels_squared_sum/num_batches - mean**2)**0.5
-
     return mean, std
+
 
 

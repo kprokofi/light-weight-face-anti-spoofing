@@ -1,17 +1,17 @@
 '''MIT License
 
 Copyright (C) 2020 Prokofiev Kirill, Sovrasov Vladislav
- 
+
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"),
 to deal in the Software without restriction, including without limitation
 the rights to use, copy, modify, merge, publish, distribute, sublicense,
 and/or sell copies of the Software, and to permit persons to whom
 the Software is furnished to do so, subject to the following conditions:
- 
+
 The above copyright notice and this permission notice shall be included
 in all copies or substantial portions of the Software.
- 
+
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
 OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
@@ -56,7 +56,7 @@ def label_smoothing(classes, y_hot, smoothing=0.1):
 class AMSoftmaxLoss(nn.Module):
     """Computes the AM-Softmax loss with cos or arc margin"""
     margin_types = ['cos', 'arc', 'adacos', 'cross_entropy']
-    def __init__(self, margin_type='cos', device='cuda:0', num_classes=2, 
+    def __init__(self, margin_type='cos', device='cuda:0', num_classes=2,
                  label_smooth=False, smoothing=0.1, ratio=(1,1), gamma=0., 
                  m=0.5, s=30, t=1.):
         super().__init__()

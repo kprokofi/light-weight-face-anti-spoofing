@@ -21,19 +21,13 @@ ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
 OR OTHER DEALINGS IN THE SOFTWARE.'''
 
 import argparse
-import os
 
 import albumentations as A
 import cv2 as cv
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
-from tqdm import tqdm
 
-from eval_protocol import evaulate
 from trainer import Trainer
 from utils import (Transform, build_criterion, build_model, make_dataset,
                    make_loader, make_weights, read_py_config)
@@ -43,9 +37,9 @@ def main():
     # parse arguments
     parser = argparse.ArgumentParser(description='antispoofing training')
     parser.add_argument('--GPU', type=int, default=0, help='specify which gpu to use')
-    parser.add_argument('--save_checkpoint', type=bool, default=True, 
+    parser.add_argument('--save_checkpoint', type=bool, default=True,
                         help='whether or not to save your model')
-    parser.add_argument('--config', type=str, default=None, required=True, 
+    parser.add_argument('--config', type=str, default=None, required=True,
                         help='Configuration file')
     parser.add_argument('--device', type=str, default='cuda', choices=['cuda','cpu'], 
                         help='if you want to train model on cpu, pass "cpu" param')
@@ -68,18 +62,24 @@ def train(config, device='cuda:0', save_checkpoint=True):
     train_transform_real = A.Compose([
                             A.Resize(**config.resize, interpolation=cv.INTER_CUBIC),
                             A.HorizontalFlip(p=0.5),
-                            A.augmentations.transforms.ISONoise(color_shift=(0.15,0.35), intensity=(0.2, 0.5), p=0.2),
-                            A.augmentations.transforms.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, 
-                                                                                brightness_by_max=True, always_apply=False, p=0.3),
+                            A.augmentations.transforms.ISONoise(color_shift=(0.15,0.35), 
+                                                                intensity=(0.2, 0.5), p=0.2),
+                            A.augmentations.transforms.RandomBrightnessContrast(brightness_limit=0.2, 
+                                                                                contrast_limit=0.2, 
+                                                                                brightness_by_max=True, 
+                                                                                always_apply=False, p=0.3),
                             A.augmentations.transforms.MotionBlur(blur_limit=5, p=0.2),
                             normalize
                             ])
     train_transform_spoof = A.Compose([
                             A.Resize(**config.resize, interpolation=cv.INTER_CUBIC),
                             A.HorizontalFlip(p=0.5),
-                            A.augmentations.transforms.ISONoise(color_shift=(0.15,0.35), intensity=(0.2, 0.5), p=0.2),
-                            A.augmentations.transforms.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, 
-                                                                                brightness_by_max=True, always_apply=False, p=0.3),
+                            A.augmentations.transforms.ISONoise(color_shift=(0.15,0.35), 
+                                                                intensity=(0.2, 0.5), p=0.2),
+                            A.augmentations.transforms.RandomBrightnessContrast(brightness_limit=0.2, 
+                                                                                contrast_limit=0.2, 
+                                                                                brightness_by_max=True, 
+                                                                                always_apply=False, p=0.3),
                             A.augmentations.transforms.MotionBlur(blur_limit=5, p=0.2),
                             normalize
                             ])
@@ -109,10 +109,10 @@ def train(config, device='cuda:0', save_checkpoint=True):
         model = torch.nn.DataParallel(model, **config.data_parallel.parallel_params)
     
     # build a criterion
-    SM = build_criterion(config, device, task='main').to(device)
-    CE = build_criterion(config, device, task='rest').to(device)
-    BCE = nn.BCELoss().to(device)
-    criterion = (SM, CE, BCE) if config.multi_task_learning else SM
+    softmax = build_criterion(config, device, task='main').to(device)
+    cross_entropy = build_criterion(config, device, task='rest').to(device)
+    bce = nn.BCELoss().to(device)
+    criterion = (softmax, cross_entropy, bce) if config.multi_task_learning else softmax
     
     # build optimizer and scheduler for it
     optimizer = torch.optim.SGD(model.parameters(), **config.optimizer)
