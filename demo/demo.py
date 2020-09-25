@@ -103,8 +103,8 @@ class TorchCNN:
 
     def preprocessing(self, images):
         ''' making image preprocessing for pytorch pipeline '''
-        mean = np.array(self.config.img_norm_cfg.mean).reshape(3,1,1)
-        std = np.array(self.config.img_norm_cfg.std).reshape(3,1,1)
+        mean = np.array(object=self.config.img_norm_cfg.mean).reshape(3,1,1)
+        std = np.array(object=self.config.img_norm_cfg.std).reshape(3,1,1)
         height, width = list(self.config.resize.values())
         for img in images:
             img = cv.resize(img, (height, width) , interpolation=cv.INTER_CUBIC)

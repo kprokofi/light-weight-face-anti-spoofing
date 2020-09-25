@@ -21,14 +21,13 @@ ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
 OR OTHER DEALINGS IN THE SOFTWARE.'''
 
 import argparse
-import os
 import os.path as osp
 import shutil
 
 import cv2 as cv
 from tqdm import tqdm
 
-from antispoofing.datasets import LCFAD
+from datasets import LCFAD
 from demo.demo import FaceDetector
 
 
