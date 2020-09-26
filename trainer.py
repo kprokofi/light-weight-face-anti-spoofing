@@ -51,7 +51,6 @@ class Trainer:
         self.path_to_checkpoint = os.path.join(self.config.checkpoint.experiment_path,
                                                 self.config.checkpoint.snapshot_name)
         self.data_parallel = self.config.data_parallel.use_parallel
-        self.cuda = self.config.data.cuda
         self.writer = SummaryWriter(self.config.checkpoint.experiment_path)
 
     def train(self, epoch: int):
@@ -65,7 +64,7 @@ class Trainer:
             if i == self.config.test_steps:
                 break
             input_ = input_.to(self.device)
-            target = target.cuda(self.device)
+            target = target.to(self.device)
             # compute output and loss
             if self.config.aug.type_aug:
                 if self.config.aug.type_aug == 'mixup':
@@ -133,8 +132,8 @@ class Trainer:
         for i, (input_, target) in loop:
             if i == self.config.test_steps:
                 break
-            input_ = input_.cuda(self.device)
-            target = target.cuda(self.device)
+            input_ = input_.to(self.device)
+            target = target.to(self.device)
             if len(target.shape) > 1:
                 target = target[:, 0].reshape(-1)
             # computing output and loss
