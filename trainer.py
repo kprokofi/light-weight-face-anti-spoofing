@@ -170,12 +170,12 @@ class Trainer:
 
     def eval(self, epoch: int, epoch_accuracy: float, save_chkpt: bool=True):
         # evaluate on last 10 epoch and remember best accuracy, AUC, EER, ACER and then save checkpoint
-        if (epoch == 0 or epoch >=60) and (epoch_accuracy > self.current_accuracy) and (save_chkpt):
+        if (epoch == 0 or epoch >=60) and (epoch_accuracy > self.current_accuracy):
             AUC, EER, apcer, bpcer, acer = evaulate(self.model, self.val_loader,
                                                     self.config, self.device, compute_accuracy=False)
             print(f'__VAL__: epoch: {epoch}   AUC: {AUC}   EER: {EER}   APCER: {apcer}\
-                   BPCER: {bpcer}   ACER: {acer}')
-            if acer < self.best_acer:
+                BPCER: {bpcer}   ACER: {acer}')
+            if acer < self.best_acer and save_chkpt:
                 self.best_acer = acer
                 checkpoint = {'state_dict': self.model.state_dict(),
                               'optimizer': self.optimizer.state_dict(), 'epoch': epoch}
@@ -189,8 +189,7 @@ class Trainer:
                         APCER: {apcer}   BPCER: {bpcer}   ACER: {acer}')
 
         # evaluate on val every 10 epoch except last one and save checkpoint
-        if ((epoch%10 == 0) and (epoch not in (self.config.epochs.max_epoch - 1, 0, 60))
-            and (save_chkpt)):
+        if (epoch%10 == 0) and (epoch not in (self.config.epochs.max_epoch - 1, 0, 60)) and (save_chkpt):
             # printing results
             AUC, EER, accur, apcer, bpcer, acer, _, _ = evaulate(self.model, self.test_loader,
                                                                  self.config, self.device,
@@ -263,7 +262,7 @@ class Trainer:
             return output
 
     def multi_task_criterion(self, output: tuple, target: torch.tensor, 
-                             C: float=1., Cs: float=0.01, Ci: float=0.1, Cf: float=1.):
+                             C: float=1., Cs: float=0.1, Ci: float=0.1, Cf: float=1.):
         ''' output -> tuple of given losses
         target -> torch tensor of a shape [batch*num_tasks]
         return loss function '''

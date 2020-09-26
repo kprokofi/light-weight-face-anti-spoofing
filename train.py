@@ -57,6 +57,8 @@ def main():
 
 def train(config, device='cuda:0', save_chkpt=True):
     ''' procedure launching all main functions of training, validation and testing pipelines'''
+    # for pipeline testing purposes
+    save_chkpt = False if config.test_steps else True
     # preprocessing data
     normalize = A.Normalize(**config.img_norm_cfg)
     train_transform_real = A.Compose([
@@ -121,7 +123,7 @@ def train(config, device='cuda:0', save_chkpt=True):
     # create Trainer object and get experiment information
     trainer = Trainer(model, criterion, optimizer, device, config, train_loader, val_loader, test_loader)
     trainer.get_exp_info()
-
+   
     # learning epochs
     for epoch in range(config.epochs.start_epoch, config.epochs.max_epoch):
         if epoch != config.epochs.start_epoch:
@@ -141,7 +143,7 @@ def train(config, device='cuda:0', save_chkpt=True):
             break
 
     # evaulate in the end of training    
-    if config.evaulation:
+    if config.evaulation and not config.test_steps:
         trainer.test(val_transform, file_name='LCC_FASD.txt', flag=None)
         trainer.test(val_transform, file_name='Celeba_test.txt', flag=True)
 

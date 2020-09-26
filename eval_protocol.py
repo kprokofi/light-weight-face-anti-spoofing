@@ -101,7 +101,9 @@ def evaulate(model, loader, config, device, compute_accuracy=True):
     target_accum = np.array([])
     accur=[]
     tp, tn, fp, fn = 0, 0, 0, 0
-    for image, target in tqdm(loader):
+    for i, (image, target) in tqdm(enumerate(loader)):
+        if config.test_steps == i:
+            break
         image = image.to(device)
         if len(target.shape) > 1:
             target = target[:, 0].reshape(-1).to(device)
@@ -145,7 +147,9 @@ def evaulate(model, loader, config, device, compute_accuracy=True):
     fnr_eer = fnr[np.nanargmin(np.absolute((fnr - fpr)))]
     eer = min(fpr_eer, fnr_eer)
     auc_ = auc(fpr, tpr)
-    return auc_, eer, accur, apcer, bpcer, acer, fpr, tpr if compute_accuracy else auc_, eer, apcer, bpcer, acer
+    print(compute_accuracy)
+    to_return = (auc_, eer, accur, apcer, bpcer, acer, fpr, tpr) if compute_accuracy else (auc_, eer, apcer, bpcer, acer)
+    return to_return
 
 def plot_roc_curve(fpr, tpr, config):
     plt.figure()

@@ -1,17 +1,17 @@
 '''MIT License
 
 Copyright (C) 2020 Prokofiev Kirill
- 
+
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"),
 to deal in the Software without restriction, including without limitation
 the rights to use, copy, modify, merge, publish, distribute, sublicense,
 and/or sell copies of the Software, and to permit persons to whom
 the Software is furnished to do so, subject to the following conditions:
- 
+
 The above copyright notice and this permission notice shall be included
 in all copies or substantial portions of the Software.
- 
+
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
 OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
@@ -31,7 +31,7 @@ from utils import build_model, load_checkpoint, read_py_config
 def main():
     # parse arguments
     parser = argparse.ArgumentParser(description='converting model to onnx')
-    parser.add_argument('--GPU', type=int, default=0, required=False, 
+    parser.add_argument('--GPU', type=int, default=0, required=False,
                         help='specify which gpu to use')
     parser.add_argument('--config', type=str, default=None, required=True,
                         help='path to configuration file')
@@ -41,7 +41,7 @@ def main():
                         help='number of the layers of your model to create required number of the input names')
     parser.add_argument('--img_size', type=tuple, default=(128,128), required=False,
                         help='height and width of the image to resize')
-    parser.add_argument('--device', type=str, default='cuda', 
+    parser.add_argument('--device', type=str, default='cuda',
                         help='if you want to eval model on cpu, pass "cpu" param')                        
     args = parser.parse_args()
     # read config
