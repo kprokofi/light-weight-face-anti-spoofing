@@ -178,8 +178,8 @@ class MobileNetV3(nn.Module):
 
         # building first layer
         input_channel = _make_divisible(16 * width_mult, 8)
-        # self.instanorm = nn.InstanceNorm2d(3)
-        layers = [conv_3x3_bn(3, input_channel, 2, theta=self.theta)]
+        self.instanorm = nn.InstanceNorm2d(3)
+        layers = [conv_3x3_in(3, input_channel, 2, theta=self.theta)]
         # building inverted residual blocks
         block = InvertedResidual
         for k, t, c, use_se, use_hs, s in self.cfgs:
@@ -224,11 +224,13 @@ class MobileNetV3(nn.Module):
             )
 
     def forward(self, x):
+        x = self.instanorm(x)
         x = self.features(x)
         x = self.conv_last(x)
         return x
     
     def forward_to_onnx(self,x):
+        x = self.instanorm(x)
         x = self.features(x)
         x = self.conv_last(x)
         x = self.avgpool(x)

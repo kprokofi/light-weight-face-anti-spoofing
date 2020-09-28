@@ -88,9 +88,14 @@ def load_checkpoint(checkpoint_path, net, map_location, optimizer=None, load_opt
     print("\n==> Loading checkpoint")
     checkpoint = torch.load(checkpoint_path, map_location=map_location)
     if 'state_dict' in checkpoint:
-        missing_keys, unexpected_keys = net.load_state_dict(checkpoint['state_dict'], strict=strict)
+        unloaded = net.load_state_dict(checkpoint['state_dict'], strict=strict)
+        missing_keys, unexpected_keys = (', '.join(i) for i in unloaded)
     else:
-        missing_keys, unexpected_keys = (', '.join(i) for i in net.load_state_dict(checkpoint, strict=strict))
+        for key in list(checkpoint):
+            if key in ('features.0.1.running_mean', 'features.0.1.running_var'):
+                del checkpoint[key]
+        unloaded = net.load_state_dict(checkpoint, strict=strict)
+        missing_keys, unexpected_keys = (', '.join(i) for i in unloaded)
     if missing_keys or unexpected_keys:
         logging.warning(f'NEXT KEYS HAVE NOT BEEN LOADED:\n\nmissing keys: {missing_keys}\
             \n\nunexpected keys: {unexpected_keys}\n')
