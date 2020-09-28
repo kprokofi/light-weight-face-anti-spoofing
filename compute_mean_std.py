@@ -55,7 +55,7 @@ def main():
 def compute_mean_std(loader):
     ''' based on next formulas: E[x] = sum(x*p) = sum(x)/N, D[X] = E[(X-E(X))**2] = E[X**2] - (E[x])**2'''
     channels_sum, channels_squared_sum, num_batches = 0, 0, 0
-    for data, _ in tqdm(loader):
+    for data, _ in tqdm(loader, leave=False):
         channels_sum += torch.mean(data, dim=[0,2,3])
         channels_squared_sum += torch.mean(data**2, dim=[0,2,3])
         num_batches += 1
@@ -63,5 +63,7 @@ def compute_mean_std(loader):
     std = (channels_squared_sum/num_batches - mean**2)**0.5
     return mean, std
 
+if __name__=="__main__":
+    main()
 
 
