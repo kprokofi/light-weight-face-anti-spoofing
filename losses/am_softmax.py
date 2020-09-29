@@ -55,7 +55,7 @@ def label_smoothing(classes, y_hot, smoothing=0.1):
 
 class AMSoftmaxLoss(nn.Module):
     """Computes the AM-Softmax loss with cos or arc margin"""
-    margin_types = ['cos', 'arc', 'adacos', 'cross_entropy']
+    margin_types = ['cos', 'arc', 'cross_entropy']
     def __init__(self, margin_type='cos', device='cuda:0', num_classes=2,
                  label_smooth=False, smoothing=0.1, ratio=(1,1), gamma=0., 
                  m=0.5, s=30, t=1.):
@@ -70,10 +70,6 @@ class AMSoftmaxLoss(nn.Module):
         assert s > 0
         if self.margin_type in ('arc','cos',):
             self.s = s
-        elif self.margin_type == 'adacos':
-            self.s = math.sqrt(2) * math.log(num_classes - 1)
-            if self.s <= 1:
-                self.s = 15
         else:
             assert self.margin_type == 'cross_entropy'
             self.s = 1

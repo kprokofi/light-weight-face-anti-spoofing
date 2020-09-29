@@ -101,7 +101,8 @@ def evaulate(model, loader, config, device, compute_accuracy=True):
     target_accum = np.array([])
     accur=[]
     tp, tn, fp, fn = 0, 0, 0, 0
-    for i, (image, target) in tqdm(enumerate(loader)):
+    loop = tqdm(enumerate(loader), total=len(loader), leave=False)
+    for i, (image, target) in loop:
         if config.test_steps == i:
             break
         image = image.to(device)
@@ -147,7 +148,6 @@ def evaulate(model, loader, config, device, compute_accuracy=True):
     fnr_eer = fnr[np.nanargmin(np.absolute((fnr - fpr)))]
     eer = min(fpr_eer, fnr_eer)
     auc_ = auc(fpr, tpr)
-    print(compute_accuracy)
     to_return = (auc_, eer, accur, apcer, bpcer, acer, fpr, tpr) if compute_accuracy else (auc_, eer, apcer, bpcer, acer)
     return to_return
 

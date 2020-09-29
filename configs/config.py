@@ -6,6 +6,8 @@ multi_task_learning = True
 
 evaulation = True
 
+test_steps=None
+
 datasets = dict(LCCFASD_root='./LCC_FASDcropped', 
                 Celeba_root='./CelebA_Spoof',
                 Casia_root='./CASIA')
@@ -42,7 +44,6 @@ epochs = dict(start_epoch=0, max_epoch=71)
 
 model= dict(model_type='Mobilenet3', 
             model_size = 'large', 
-            use_amsoftmax=True, 
             pretrained=True, 
             embeding_dim=512, 
             imagenet_weights='./pretrained/mobilenetv3-large-1cd25616.pth')
@@ -71,5 +72,3 @@ RSC = dict(use_rsc=False,
 test_dataset = dict(type='LCC_FASD')
 
 conv_cd = dict(theta=0)
-
-test_steps=float('inf')

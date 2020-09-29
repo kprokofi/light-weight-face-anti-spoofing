@@ -28,7 +28,7 @@ For training or evaluating on CelebA Spoof dataset you need to download dataset 
 cd /data_preparation/
 python3 prepare_celeba_json.py
 ```
-To train or evaluate on LCC FASD dataset you need to download it (link is available in their paper on [arxiv](https://csit.am/2019/proceedings/PRIP/PRIP3.pdf)). Then you need to get the OpenVINO™ face detector model (choose the one on the goole drive) and run following script:
+To train or evaluate on LCC FASD dataset you need to download it (link is available in their paper on [arxiv](https://csit.am/2019/proceedings/PRIP/PRIP3.pdf)). Then you need to get the OpenVINO™ face detector model (choose the one on the goole drive), activate OpenVINO™ enviroment and run following script:
 ```bash
 python3 prepare_LCC_FASD.py --fd_model <path to `.xml` face detector model> --root_dir <path to root dir of LCC_FASD>
 ```

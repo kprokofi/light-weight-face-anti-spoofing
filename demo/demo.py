@@ -97,7 +97,7 @@ class TorchCNN:
         self.model = model
         if config.data_parallel.use_parallel:
             self.model = nn.DataParallel(self.model, **config.data_parallel.parallel_params)
-        utils.load_checkpoint(checkpoint_path, self.model, map_location=device)
+        utils.load_checkpoint(checkpoint_path, self.model, map_location=device, strict=True)
         self.config = config
 
     def preprocessing(self, images):
@@ -116,10 +116,9 @@ class TorchCNN:
     def forward(self, batch):
         batch = self.preprocessing(batch)
         self.model.eval()
-        if self.config.data_parallel.use_parallel:
-            model1 = self.model.module
-        else:
-            model1 = self.model
+        model1 = (self.model.module 
+                  if self.config.data_parallel.use_parallel 
+                  else self.model)
         with torch.no_grad():
             features = model1.forward(batch)
             output = model1.spoof_task(features)
@@ -159,10 +158,10 @@ def draw_detections(frame, detections, confidence, thresh):
 
     return frame
 
-def run(params, capture, face_det, spoof_model):
+def run(params, capture, face_det, spoof_model, write_video=False):
     """Starts the anti spoofing demo"""
     fourcc = cv.VideoWriter_fourcc(*'MP4V')
-    writer_video = cv.VideoWriter('output_video.mp4', fourcc, 24, (720,540))
+    writer_video = cv.VideoWriter('output_video.mp4', fourcc, 24, (1280,720))
     win_name = 'Antispoofing Recognition'
     while cv.waitKey(1) != 27:
         has_frame, frame = capture.read()
@@ -172,11 +171,8 @@ def run(params, capture, face_det, spoof_model):
         confidence = pred_spoof(frame, detections, spoof_model)
         frame = draw_detections(frame, detections, confidence, params.spoof_thresh)
         cv.imshow(win_name, frame)
-        writer_video.write(cv.resize(frame, (720,540)))
-
-def load_checkpoint(checkpoint, model):
-    print("==> Loading checkpoint")
-    model.load_state_dict(checkpoint['state_dict'])
+        if write_video:
+            writer_video.write(cv.resize(frame, (1280,720)))
 
 def main():
     """Prepares data for the antispoofing recognition demo"""
@@ -197,10 +193,13 @@ def main():
     parser.add_argument('-l', '--cpu_extension',
                         help='MKLDNN (CPU)-targeted custom layers.Absolute path to a shared library with the kernels '
                              'impl.', type=str, default=None)
+    parser.add_argument('--write_video', type=bool, default=False, 
+                        help='if you set this arg to True, the video of the demo will be recoreded')
 
     args = parser.parse_args()
     config = utils.read_py_config(args.config)
     device = args.device + f':{args.GPU}' if args.device == 'cuda' else 'cpu'
+    write_video = args.write_video
 
     if args.cam_id >= 0:
         log.info('Reading from cam {}'.format(args.cam_id))
@@ -219,9 +218,10 @@ def main():
         spoof_model = utils.build_model(config, args, strict=True, mode='eval')
         spoof_model = TorchCNN(spoof_model, args.spf_model, config, device=device)
     else:
+        assert args.spf_model.endswith('.xml')
         spoof_model = VectorCNN(args.spf_model)
     # running demo    
-    run(args, cap, face_detector, spoof_model)
+    run(args, cap, face_detector, spoof_model, write_video)
 
 if __name__ == '__main__':
     main()
