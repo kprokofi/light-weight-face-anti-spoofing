@@ -198,10 +198,10 @@ class MobileNetV3(nn.Module):
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         # bulding heads for multi task
         self.spoofer = nn.Sequential(
-            Dropout(prob_dropout=prob_dropout_linear,
+            Dropout(p=prob_dropout_linear,
                     mu=self.mu,
                     sigma=self.sigma,
-                    type_dropout=self.type_dropout,
+                    dist=self.type_dropout,
                     linear=True),
             nn.BatchNorm1d(embeding_dim),
             h_swish(),
@@ -209,30 +209,30 @@ class MobileNetV3(nn.Module):
         )
         if self.multi_heads:
             self.lightning = nn.Sequential(
-                Dropout(prob_dropout=prob_dropout_linear,
+                Dropout(p=prob_dropout_linear,
                         mu=self.mu,
                         sigma=self.sigma,
-                        type_dropout=self.type_dropout,
+                        dist=self.type_dropout,
                         linear=True),
                 nn.BatchNorm1d(embeding_dim),
                 h_swish(),
                 nn.Linear(embeding_dim, 5),
             )
             self.spoof_type = nn.Sequential(
-                Dropout(prob_dropout=prob_dropout_linear,
+                Dropout(p=prob_dropout_linear,
                         mu=self.mu,
                         sigma=self.sigma,
-                        type_dropout=self.type_dropout,
+                        dist=self.type_dropout,
                         linear=True),
                 nn.BatchNorm1d(embeding_dim),
                 h_swish(),
                 nn.Linear(embeding_dim, 11),
             )
             self.real_atr = nn.Sequential(
-                Dropout(prob_dropout=prob_dropout_linear,
+                Dropout(p=prob_dropout_linear,
                         mu=self.mu,
                         sigma=self.sigma,
-                        type_dropout=self.type_dropout,
+                        dist=self.type_dropout,
                         linear=True),
                 nn.BatchNorm1d(embeding_dim),
                 h_swish(),
@@ -245,6 +245,7 @@ class MobileNetV3(nn.Module):
         return x
 
     def forward_to_onnx(self,x):
+        x = self.instanorm(x)
         x = self.features(x)
         x = self.conv_last(x)
         x = self.avgpool(x)
@@ -252,7 +253,7 @@ class MobileNetV3(nn.Module):
         spoof_out = self.spoofer(x)
         if isinstance(spoof_out, tuple):
                 spoof_out = spoof_out[0]
-        probab = F.softmax(spoof_out*scaling, dim=-1)
+        probab = F.softmax(spoof_out*self.scaling, dim=-1)
         return probab
 
     def make_logits(self, features):

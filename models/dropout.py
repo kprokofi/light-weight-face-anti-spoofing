@@ -19,11 +19,12 @@ class Dropout(nn.Module):
         self.mu = float(mu)
         self.sigma = float(sigma)
         assert self.sigma > 0.
-
+        # need to distinct 2d and 1d dropout
+        self.linear = linear
     def forward(self, x):
-        if self.dist == 'bernoulli' and not linear:
+        if self.dist == 'bernoulli' and not self.linear:
             out = F.dropout2d(x, self.p, self.training)
-        elif self.dist == 'bernoulli' and linear:
+        elif self.dist == 'bernoulli' and self.linear:
             out = F.dropout(x, self.p, self.training)
         elif self.dist == 'gaussian':
             if self.training:

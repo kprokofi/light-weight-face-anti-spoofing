@@ -1,17 +1,17 @@
 '''MIT License
 
 Copyright (C) 2020 Prokofiev Kirill
- 
+
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"),
 to deal in the Software without restriction, including without limitation
 the rights to use, copy, modify, merge, publish, distribute, sublicense,
 and/or sell copies of the Software, and to permit persons to whom
 the Software is furnished to do so, subject to the following conditions:
- 
+
 The above copyright notice and this permission notice shall be included
 in all copies or substantial portions of the Software.
- 
+
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
 OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
@@ -43,13 +43,13 @@ from utils import (Transform, build_model, load_checkpoint, make_dataset,
 def main():
     # parsing arguments
     parser = argparse.ArgumentParser(description='antispoofing training')
-    parser.add_argument('--draw_graph', default=False, type=bool, required=False, 
+    parser.add_argument('--draw_graph', default=False, type=bool, required=False,
                         help='whether or not to draw graphics')
-    parser.add_argument('--GPU', default=0, type=int, required=False, 
+    parser.add_argument('--GPU', default=0, type=int, required=False,
                         help='specify which GPU to use')
     parser.add_argument('--config', type=str, default=None, required=True,
                         help='path to configuration file')
-    parser.add_argument('--device', type=str, default='cuda', 
+    parser.add_argument('--device', type=str, default='cuda',
                         help='if you want to eval model on cpu, pass "cpu" param')
     args = parser.parse_args()
 
@@ -73,7 +73,7 @@ def main():
     test_transform = A.Compose([
                 A.Resize(**config.resize, interpolation=cv.INTER_CUBIC),
                 normalize
-                ])  
+                ])
     test_transform = Transform(val=test_transform)
     test_dataset = make_dataset(config, val_transform=test_transform, mode='eval')
     test_loader = DataLoader(dataset=test_dataset, batch_size=100, shuffle=True, num_workers=2)
@@ -120,8 +120,8 @@ def evaulate(model, loader, config, device, compute_accuracy=True):
 
             y_true = target.detach().cpu().numpy()
             y_pred = output.argmax(dim=1).detach().cpu().numpy()
-            tn_batch, fp_batch, fn_batch, tp_batch = metrics.confusion_matrix(y_true=y_true, 
-                                                                              y_pred=y_pred, 
+            tn_batch, fp_batch, fn_batch, tp_batch = metrics.confusion_matrix(y_true=y_true,
+                                                                              y_pred=y_pred,
                                                                               ).ravel()
             tp += tp_batch
             tn += tn_batch
@@ -188,4 +188,4 @@ def det_curve(fps,fns, eer, config):
 
 if __name__ == "__main__":
     main()
-    
+

@@ -1,17 +1,17 @@
 '''MIT License
 
 Copyright (C) 2020 Prokofiev Kirill
- 
+
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"),
 to deal in the Software without restriction, including without limitation
 the rights to use, copy, modify, merge, publish, distribute, sublicense,
 and/or sell copies of the Software, and to permit persons to whom
 the Software is furnished to do so, subject to the following conditions:
- 
+
 The above copyright notice and this permission notice shall be included
 in all copies or substantial portions of the Software.
- 
+
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
 OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
@@ -39,14 +39,14 @@ def main():
     parser.add_argument('--img_size', type=tuple, default=(128,128), required=False,
                         help='height and width of the image to resize')
     args = parser.parse_args()
-    # transform image 
+    # transform image
     transforms = A.Compose([
                                 A.Resize(*args.img_size, interpolation=cv2.INTER_CUBIC),
                                 A.Normalize(mean=[0, 0, 0], std=[1, 1, 1])
                                 ])
     root_folder = args.root
-    train_dataset = CelebASpoofDataset(root_folder, test_mode=False, 
-                                       transform=Transform(transforms), 
+    train_dataset = CelebASpoofDataset(root_folder, test_mode=False,
+                                       transform=Transform(transforms),
                                        multi_learning=False)
     dataloader = DataLoader(train_dataset, batch_size=100, shuffle=True)
     mean, std = compute_mean_std(dataloader)

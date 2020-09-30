@@ -91,9 +91,6 @@ def load_checkpoint(checkpoint_path, net, map_location, optimizer=None, load_opt
         unloaded = net.load_state_dict(checkpoint['state_dict'], strict=strict)
         missing_keys, unexpected_keys = (', '.join(i) for i in unloaded)
     else:
-        for key in list(checkpoint):
-            if key in ('features.0.1.running_mean', 'features.0.1.running_var'):
-                del checkpoint[key]
         unloaded = net.load_state_dict(checkpoint, strict=strict)
         missing_keys, unexpected_keys = (', '.join(i) for i in unloaded)
     if missing_keys or unexpected_keys:
@@ -116,7 +113,7 @@ def precision(output, target, s=None):
 
 def mixup_target(input_, target, config, device):
     # compute mix-up augmentation
-    input_, target_a, target_b, lam = mixup_data(input_, target, config.aug.alpha, 
+    input_, target_a, target_b, lam = mixup_data(input_, target, config.aug.alpha,
                                                 config.aug.beta, device)
     return input_, target_a, target_b, lam
 
@@ -180,29 +177,29 @@ def freeze_layers(model, open_layers):
             for p in module.parameters():
                 p.requires_grad = False
 
-def make_dataset(config: dict, train_transform: object = None, val_transform: object = None, 
+def make_dataset(config: dict, train_transform: object = None, val_transform: object = None,
                 mode='train'):
     ''' make train, val or test datasets '''
     celeba_root = config.datasets.Celeba_root
     lccfasd_root = config.datasets.LCCFASD_root
     casia_root = config.datasets.Casia_root
 
-    if mode == 'train': 
+    if mode == 'train':
         if config.dataset == 'LCC_FASD':
             train =  LCFAD(root_dir=lccfasd_root, protocol='train', transform=train_transform)
             val = LCFAD(root_dir=lccfasd_root, protocol='val', transform=val_transform)
         elif config.dataset == 'celeba-spoof':
-            train =  CelebASpoofDataset(root_folder=celeba_root, test_mode=False, 
+            train =  CelebASpoofDataset(root_folder=celeba_root, test_mode=False,
                                         transform=train_transform, multi_learning=config.multi_task_learning)
-            val = CelebASpoofDataset(root_folder=celeba_root, test_mode=True, 
+            val = CelebASpoofDataset(root_folder=celeba_root, test_mode=True,
                                      transform=val_transform, multi_learning=config.multi_task_learning)
         elif config.dataset == 'Casia':
             train = CasiaSurfDataset(protocol=1, dir_=casia_root, mode='train', transform=train_transform)
             val = CasiaSurfDataset(protocol=1, dir_=casia_root, mode='dev', transform=val_transform)
         elif config.dataset == 'multi_dataset':
-            train = MultiDataset(lccfasd_root, celeba_root, train=True, transform=train_transform, 
+            train = MultiDataset(lccfasd_root, celeba_root, train=True, transform=train_transform,
                                  LCFASD_train_protocol='combine_all', LCFASD_val_protocol='val_test')
-            val = MultiDataset(lccfasd_root, celeba_root, train=False, transform=val_transform, 
+            val = MultiDataset(lccfasd_root, celeba_root, train=False, transform=val_transform,
                                LCFASD_train_protocol='combine_all', LCFASD_val_protocol='val_test')
         return train, val
 
@@ -215,7 +212,7 @@ def make_dataset(config: dict, train_transform: object = None, val_transform: ob
         elif config.test_dataset.type == 'Casia':
             test = CasiaSurfDataset(protocol=1, dir_=casia_root, mode='test', transform=val_transform)
         elif config.test_dataset.type == 'celeba-spoof':
-            test = CelebASpoofDataset(root_folder=celeba_root, test_mode=True, transform=val_transform, 
+            test = CelebASpoofDataset(root_folder=celeba_root, test_mode=True, transform=val_transform,
                                       multi_learning=config.multi_task_learning)
         return test
 
@@ -258,7 +255,7 @@ def build_model(config, device, strict=True, mode='train'):
         if (config.loss.loss_type == 'amsoftmax') and (config.loss.amsoftmax.margin_type != 'cross_entropy'):
             model.spoofer = AngleSimpleLinear(config.model.embeding_dim, 2)
         elif config.loss.loss_type == 'soft_triple':
-            model.spoofer = SoftTripleLinear(config.model.embeding_dim, 2, 
+            model.spoofer = SoftTripleLinear(config.model.embeding_dim, 2,
                                              num_proxies=config.loss.soft_triple.K)
     else:
         assert config.model.model_type == 'Mobilenet3'
@@ -281,11 +278,11 @@ def build_model(config, device, strict=True, mode='train'):
                 model.forward = model.forward_to_onnx
 
         if (config.loss.loss_type == 'amsoftmax') and (config.loss.amsoftmax.margin_type != 'cross_entropy'):
+            model.scaling = config.loss.amsoftmax.s
             model.spoofer[3] = AngleSimpleLinear(config.model.embeding_dim, 2)
-
         elif config.loss.loss_type == 'soft_triple':
+            model.scaling = config.loss.soft_triple.s
             model.spoofer[3] = SoftTripleLinear(config.model.embeding_dim, 2, num_proxies=config.loss.soft_triple.K)
-    
     return model
 
 def build_criterion(config, device, task='main'):
@@ -296,7 +293,7 @@ def build_criterion(config, device, task='main'):
             criterion = SoftTripleLoss(**config.loss.soft_triple)
     else:
         assert task == 'rest'
-        criterion = AMSoftmaxLoss(margin_type='cross_entropy', 
+        criterion = AMSoftmaxLoss(margin_type='cross_entropy',
                                   label_smooth=config.loss.amsoftmax.label_smooth,
                                   smoothing=config.loss.amsoftmax.smoothing,
                                   gamma=config.loss.amsoftmax.gamma,

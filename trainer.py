@@ -1,17 +1,17 @@
 '''MIT License
 
 Copyright (C) 2020 Prokofiev Kirill
- 
+
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"),
 to deal in the Software without restriction, including without limitation
 the rights to use, copy, modify, merge, publish, distribute, sublicense,
 and/or sell copies of the Software, and to permit persons to whom
 the Software is furnished to do so, subject to the following conditions:
- 
+
 The above copyright notice and this permission notice shall be included
 in all copies or substantial portions of the Software.
- 
+
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
 OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
@@ -143,12 +143,12 @@ class Trainer:
                     model1 = self.model.module
                 else:
                     model1 = self.model
-                
+
                 output = model1.make_logits(features)
                 if isinstance(output, tuple):
                     output = output[0]
 
-                new_target = F.one_hot(target, num_classes=2)  
+                new_target = F.one_hot(target, num_classes=2)
                 loss = criterion(output, new_target)
 
             # measure accuracy and record loss
@@ -201,7 +201,7 @@ class Trainer:
 
     def make_output(self, input_: torch.tensor, target: torch.tensor):
         ''' target - one hot for main task
-        return output 
+        return output
         If use rsc compute output applying rsc method'''
         assert target.shape[1] == 2
         if self.config.RSC.use_rsc:
@@ -233,8 +233,8 @@ class Trainer:
             quantile = quantile.reshape(input_.size(0),1,1,1)
             # create mask
             mask = gradients < quantile
-            
-            # element wise product of features and mask, correction for expectition value 
+
+            # element wise product of features and mask, correction for expectition value
             new_features = (features*mask)/(1-self.config.RSC.p)
             # compute new logits
             new_logits = model1.spoof_task(new_features)
@@ -260,7 +260,7 @@ class Trainer:
             output = model1.make_logits(features)
             return output
 
-    def multi_task_criterion(self, output: tuple, target: torch.tensor, 
+    def multi_task_criterion(self, output: tuple, target: torch.tensor,
                              C: float=1., Cs: float=0.1, Ci: float=0.1, Cf: float=1.):
         ''' output -> tuple of given losses
         target -> torch tensor of a shape [batch*num_tasks]
@@ -299,7 +299,7 @@ class Trainer:
 
     @staticmethod
     def mixup_criterion(criterion, pred, y_a, y_b, lam, num_classes):
-        ''' y_a and y_b considered to be folded target labels. 
+        ''' y_a and y_b considered to be folded target labels.
         All losses waits to get one_hot target as an input except the BCELoss '''
         ya_hot = F.one_hot(y_a, num_classes=num_classes)
         yb_hot = F.one_hot(y_b, num_classes=num_classes)
@@ -330,11 +330,11 @@ class Trainer:
         acer = {round(acer*100,2)}\n
         checkpoint made on {epoch_of_checkpoint} epoch\n
         {round(np.mean(accur),3)};;;{round(AUC,3)};;;{round(EER*100,2)};;;\
-            {round(apcer*100,2)};;;{round(bpcer*100,2)};;;{round(acer*100,2)}'''  
-    
+            {round(apcer*100,2)};;;{round(bpcer*100,2)};;;{round(acer*100,2)}'''
+
         with open(os.path.join(self.config.checkpoint.experiment_path, file_name), 'w') as f:
             f.write(results)
-    
+
     def get_exp_info(self):
         exp_num = self.config.exp_num
         print(f'_______INIT EXPERIMENT {exp_num}______')

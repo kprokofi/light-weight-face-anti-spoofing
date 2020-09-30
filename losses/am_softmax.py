@@ -57,7 +57,7 @@ class AMSoftmaxLoss(nn.Module):
     """Computes the AM-Softmax loss with cos or arc margin"""
     margin_types = ['cos', 'arc', 'cross_entropy']
     def __init__(self, margin_type='cos', device='cuda:0', num_classes=2,
-                 label_smooth=False, smoothing=0.1, ratio=(1,1), gamma=0., 
+                 label_smooth=False, smoothing=0.1, ratio=(1,1), gamma=0.,
                  m=0.5, s=30, t=1.):
         super().__init__()
         assert margin_type in AMSoftmaxLoss.margin_types
