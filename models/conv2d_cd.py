@@ -32,8 +32,7 @@ class Conv2d_cd(nn.Module):
                  padding=1, dilation=1, groups=1, bias=False, theta=0):
 
         super().__init__() 
-        self.theta = 0
-        self.theta_limit = theta
+        self.theta = theta
         self.bias = bias or None
         self.stride = stride
         self.dilation = dilation
@@ -46,10 +45,6 @@ class Conv2d_cd(nn.Module):
         self.i = 0
 
     def forward(self, x):
-        # if self.training and self.theta < self.theta_limit and self.theta_limit != 0:
-        #     # adapt theta for first 10k iterations
-        #     self.theta = -0.000000000476190*self.i**2+0.000074761904762*self.i-0.000000000000003
-        #     self.i +=1
         out_normal = F.conv2d(input=x, weight=self.weight, bias=self.bias, dilation=self.dilation,
                               stride=self.stride, padding=self.padding, groups=self.groups)
         if math.fabs(self.theta - 0.0) < 1e-8:
