@@ -1,17 +1,17 @@
 '''MIT License
 
 Copyright (C) 2020 Prokofiev Kirill
- 
+
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"),
 to deal in the Software without restriction, including without limitation
 the rights to use, copy, modify, merge, publish, distribute, sublicense,
 and/or sell copies of the Software, and to permit persons to whom
 the Software is furnished to do so, subject to the following conditions:
- 
+
 The above copyright notice and this permission notice shall be included
 in all copies or substantial portions of the Software.
- 
+
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
 OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
@@ -78,7 +78,7 @@ def conv_1x1_in(inp, oup, theta):
 
 
 class InvertedResidual(nn.Module):
-    def __init__(self, inp, oup, stride, expand_ratio,  
+    def __init__(self, inp, oup, stride, expand_ratio,
                  prob_dropout, type_dropout, sigma, mu, theta):
         super().__init__()
         assert stride in [1, 2]
@@ -118,8 +118,8 @@ class InvertedResidual(nn.Module):
 
 
 class MobileNetV2(nn.Module):
-    def __init__(self, width_mult=1., prob_dropout=0.1, type_dropout='bernoulli', 
-                 prob_dropout_linear=0.5, embeding_dim=1280, mu=0.5, sigma=0.3, 
+    def __init__(self, width_mult=1., prob_dropout=0.1, type_dropout='bernoulli',
+                 prob_dropout_linear=0.5, embeding_dim=1280, mu=0.5, sigma=0.3,
                  theta=0, multi_heads=True):
         super().__init__()
         # setting of inverted residual blocks
@@ -144,10 +144,10 @@ class MobileNetV2(nn.Module):
         for t, c, n, s in self.cfgs:
             output_channel = _make_divisible(c * width_mult, 4 if width_mult == 0.1 else 8)
             for i in range(n):
-                layers.append(block(input_channel, output_channel, 
-                                    s if i == 0 else 1, t, 
-                                    prob_dropout=prob_dropout, 
-                                    type_dropout=type_dropout, 
+                layers.append(block(input_channel, output_channel,
+                                    s if i == 0 else 1, t,
+                                    prob_dropout=prob_dropout,
+                                    type_dropout=type_dropout,
                                     mu=mu, sigma=sigma, theta=theta))
                 input_channel = output_channel
         self.features = nn.Sequential(*layers)
@@ -172,7 +172,7 @@ class MobileNetV2(nn.Module):
         x = x.view(x.size(0), -1)
         spoof_out = self.spoofer(x)
         probab = F.softmax(spoof_out, dim=-1)
-        return probab    
+        return probab
 
     def make_logits(self, features):
         output = self.avgpool(features)

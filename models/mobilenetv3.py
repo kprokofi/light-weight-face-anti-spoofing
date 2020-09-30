@@ -113,19 +113,19 @@ def conv_1x1_in(inp, oup, theta):
 
 
 class InvertedResidual(nn.Module):
-    def __init__(self, inp, hidden_dim, oup, kernel_size, stride, 
+    def __init__(self, inp, hidden_dim, oup, kernel_size, stride,
                  use_se, use_hs, prob_dropout, type_dropout, sigma, mu, theta):
         super(InvertedResidual, self).__init__()
         assert stride in [1, 2]
         self.identity = stride == 1 and inp == oup
-        self.dropout2d = Dropout(dist=type_dropout, mu=mu , 
-                                 sigma=sigma, 
+        self.dropout2d = Dropout(dist=type_dropout, mu=mu ,
+                                 sigma=sigma,
                                  p=prob_dropout)
         if inp == hidden_dim:
             self.conv = nn.Sequential(
                 # dw
-                nn.Conv2d(hidden_dim, hidden_dim, kernel_size, stride, 
-                         (kernel_size - 1) // 2, groups=hidden_dim, bias=False),
+                Conv2d_cd(hidden_dim, hidden_dim, kernel_size, stride,
+                         (kernel_size - 1) // 2, groups=hidden_dim, bias=False, theta=theta),
                 nn.BatchNorm2d(hidden_dim),
                 h_swish() if use_hs else nn.ReLU(inplace=True),
                 # Squeeze-and-Excite
@@ -141,8 +141,8 @@ class InvertedResidual(nn.Module):
                 nn.BatchNorm2d(hidden_dim),
                 h_swish() if use_hs else nn.ReLU(inplace=True),
                 # dw
-                nn.Conv2d(hidden_dim, hidden_dim, kernel_size, stride, 
-                         (kernel_size - 1) // 2, groups=hidden_dim, bias=False),
+                Conv2d_cd(hidden_dim, hidden_dim, kernel_size, stride,
+                         (kernel_size - 1) // 2, groups=hidden_dim, bias=False, theta=theta),
                 nn.BatchNorm2d(hidden_dim),
                 # Squeeze-and-Excite
                 SELayer(hidden_dim) if use_se else nn.Identity(),
@@ -160,16 +160,17 @@ class InvertedResidual(nn.Module):
 
 
 class MobileNetV3(nn.Module):
-    def __init__(self, cfgs, mode, prob_dropout, type_dropout, 
-                 prob_dropout_linear=0.5, 
-                 embeding_dim=1280, mu=0.5, sigma=0.3, 
-                 num_classes=1000, width_mult=1., 
-                 theta=0, multi_heads=True):
+    def __init__(self, cfgs, mode, prob_dropout, type_dropout,
+                 prob_dropout_linear=0.5,
+                 embeding_dim=1280, mu=0.5, sigma=0.3,
+                 num_classes=1000, width_mult=1.,
+                 theta=0, multi_heads=True, scaling=1):
         super().__init__()
         # setting of inverted residual blocks
         self.cfgs = cfgs
         self.prob_dropout = prob_dropout
         self.type_dropout = type_dropout
+        self.scaling = scaling
         self.mu = mu
         self.sigma = sigma
         self.theta = theta
@@ -184,7 +185,7 @@ class MobileNetV3(nn.Module):
         for k, t, c, use_se, use_hs, s in self.cfgs:
             output_channel = _make_divisible(c * width_mult, 8)
             exp_size = _make_divisible(input_channel * t, 8)
-            layers.append(block(input_channel, exp_size, output_channel, k, s, use_se, use_hs, 
+            layers.append(block(input_channel, exp_size, output_channel, k, s, use_se, use_hs,
                                                                 prob_dropout=self.prob_dropout,
                                                                 mu=self.mu,
                                                                 sigma=self.sigma,
@@ -197,26 +198,42 @@ class MobileNetV3(nn.Module):
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         # bulding heads for multi task
         self.spoofer = nn.Sequential(
-            nn.Dropout(prob_dropout_linear),
+            Dropout(prob_dropout=prob_dropout_linear,
+                    mu=self.mu,
+                    sigma=self.sigma,
+                    type_dropout=self.type_dropout,
+                    linear=True),
             nn.BatchNorm1d(embeding_dim),
             h_swish(),
             nn.Linear(embeding_dim, 2),
         )
         if self.multi_heads:
             self.lightning = nn.Sequential(
-                nn.Dropout(prob_dropout_linear),
+                Dropout(prob_dropout=prob_dropout_linear,
+                        mu=self.mu,
+                        sigma=self.sigma,
+                        type_dropout=self.type_dropout,
+                        linear=True),
                 nn.BatchNorm1d(embeding_dim),
                 h_swish(),
                 nn.Linear(embeding_dim, 5),
             )
             self.spoof_type = nn.Sequential(
-                nn.Dropout(prob_dropout_linear),
+                Dropout(prob_dropout=prob_dropout_linear,
+                        mu=self.mu,
+                        sigma=self.sigma,
+                        type_dropout=self.type_dropout,
+                        linear=True),
                 nn.BatchNorm1d(embeding_dim),
                 h_swish(),
                 nn.Linear(embeding_dim, 11),
             )
             self.real_atr = nn.Sequential(
-                nn.Dropout(prob_dropout_linear),
+                Dropout(prob_dropout=prob_dropout_linear,
+                        mu=self.mu,
+                        sigma=self.sigma,
+                        type_dropout=self.type_dropout,
+                        linear=True),
                 nn.BatchNorm1d(embeding_dim),
                 h_swish(),
                 nn.Linear(embeding_dim, 40),
@@ -226,14 +243,16 @@ class MobileNetV3(nn.Module):
         x = self.features(x)
         x = self.conv_last(x)
         return x
-    
+
     def forward_to_onnx(self,x):
         x = self.features(x)
         x = self.conv_last(x)
         x = self.avgpool(x)
         x = x.view(x.size(0), -1)
         spoof_out = self.spoofer(x)
-        probab = F.softmax(spoof_out, dim=-1)
+        if isinstance(spoof_out, tuple):
+                spoof_out = spoof_out[0]
+        probab = F.softmax(spoof_out*scaling, dim=-1)
         return probab
 
     def make_logits(self, features):
@@ -258,7 +277,7 @@ def mobilenetv3_large(**kwargs):
     Constructs a MobileNetV3-Large model
     """
     cfgs = [
-        # k, t, c, SE, HS, s 
+        # k, t, c, SE, HS, s
         [3,   1,  16, 0, 0, 1],
         [3,   4,  24, 0, 0, 2],
         [3,   3,  24, 0, 0, 1],
@@ -282,7 +301,7 @@ def mobilenetv3_small(**kwargs):
     Constructs a MobileNetV3-Small model
     """
     cfgs = [
-        # k, t, c, SE, HS, s 
+        # k, t, c, SE, HS, s
         [3,    1,  16, 1, 0, 2],
         [3,  4.5,  24, 0, 0, 2],
         [3, 3.67,  24, 0, 0, 1],

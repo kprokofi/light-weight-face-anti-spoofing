@@ -31,7 +31,7 @@ class Conv2d_cd(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size=3, stride=1,
                  padding=1, dilation=1, groups=1, bias=False, theta=0):
 
-        super().__init__() 
+        super().__init__()
         self.theta = theta
         self.bias = bias or None
         self.stride = stride

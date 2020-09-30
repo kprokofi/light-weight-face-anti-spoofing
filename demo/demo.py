@@ -35,7 +35,7 @@ from ie_tools import load_ie_model
 
 current_dir = osp.dirname(osp.abspath(inspect.getfile(inspect.currentframe())))
 parent_dir = osp.dirname(current_dir)
-sys.path.insert(0, parent_dir) 
+sys.path.insert(0, parent_dir)
 import utils
 
 
@@ -56,7 +56,7 @@ class FaceDetector:
     def __decode_detections(self, out, frame_shape):
         """Decodes raw SSD output"""
         detections = []
-        
+
         for detection in out[0, 0]:
             confidence = detection[2]
             if confidence > self.confidence:
@@ -105,19 +105,19 @@ class TorchCNN:
         mean = np.array(object=self.config.img_norm_cfg.mean).reshape((3,1,1))
         std = np.array(object=self.config.img_norm_cfg.std).reshape((3,1,1))
         height, width = list(self.config.resize.values())
-        for img in images:
-            img = cv.resize(img, (height, width) , interpolation=cv.INTER_CUBIC)
-            img = cv.cvtColor(img, cv.COLOR_BGR2RGB)
-            img = np.transpose(img, (2, 0, 1)).astype(np.float32)
-            img = img/255
-            img = (img - mean)/std
+        for i,_ in enumerate(images):
+            images[i] = cv.resize(images[i], (height, width) , interpolation=cv.INTER_CUBIC)
+            images[i] = cv.cvtColor(images[i], cv.COLOR_BGR2RGB)
+            images[i] = np.transpose(images[i], (2, 0, 1)).astype(np.float32)
+            images[i] = images[i]/255
+            images[i] = (images[i] - mean)/std
         return torch.tensor(images, dtype=torch.float32)
 
     def forward(self, batch):
         batch = self.preprocessing(batch)
         self.model.eval()
-        model1 = (self.model.module 
-                  if self.config.data_parallel.use_parallel 
+        model1 = (self.model.module
+                  if self.config.data_parallel.use_parallel
                   else self.model)
         with torch.no_grad():
             features = model1.forward(batch)
@@ -161,7 +161,8 @@ def draw_detections(frame, detections, confidence, thresh):
 def run(params, capture, face_det, spoof_model, write_video=False):
     """Starts the anti spoofing demo"""
     fourcc = cv.VideoWriter_fourcc(*'MP4V')
-    writer_video = cv.VideoWriter('output_video.mp4', fourcc, 24, (1280,720))
+    resolution = (1280,720)
+    writer_video = cv.VideoWriter('output_video.mp4', fourcc, 24, resolution)
     win_name = 'Antispoofing Recognition'
     while cv.waitKey(1) != 27:
         has_frame, frame = capture.read()
@@ -172,7 +173,7 @@ def run(params, capture, face_det, spoof_model, write_video=False):
         frame = draw_detections(frame, detections, confidence, params.spoof_thresh)
         cv.imshow(win_name, frame)
         if write_video:
-            writer_video.write(cv.resize(frame, (1280,720)))
+            writer_video.write(cv.resize(frame, resolution))
 
 def main():
     """Prepares data for the antispoofing recognition demo"""
@@ -184,16 +185,16 @@ def main():
                         help='Configuration file')
     parser.add_argument('--fd_model', type=str, required=True)
     parser.add_argument('--fd_thresh', type=float, default=0.6, help='Threshold for FD')
-    parser.add_argument('--spoof_thresh', type=float, default=0.4, 
+    parser.add_argument('--spoof_thresh', type=float, default=0.4,
                         help='Threshold for predicting spoof/real. The lower the more model oriented on spoofs')
-    parser.add_argument('--spf_model', type=str, default=None, 
+    parser.add_argument('--spf_model', type=str, default=None,
                         help='path to .pth checkpoint of model or .xml IR OpenVINO model', required=True)
     parser.add_argument('--device', type=str, default='CPU')
     parser.add_argument('--GPU', type=int, default=0, help='specify which GPU to use')
     parser.add_argument('-l', '--cpu_extension',
                         help='MKLDNN (CPU)-targeted custom layers.Absolute path to a shared library with the kernels '
                              'impl.', type=str, default=None)
-    parser.add_argument('--write_video', type=bool, default=False, 
+    parser.add_argument('--write_video', type=bool, default=False,
                         help='if you set this arg to True, the video of the demo will be recoreded')
 
     args = parser.parse_args()
@@ -220,7 +221,7 @@ def main():
     else:
         assert args.spf_model.endswith('.xml')
         spoof_model = VectorCNN(args.spf_model)
-    # running demo    
+    # running demo
     run(args, cap, face_detector, spoof_model, write_video)
 
 if __name__ == '__main__':
