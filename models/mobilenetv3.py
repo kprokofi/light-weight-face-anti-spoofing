@@ -318,12 +318,5 @@ def mobilenetv3_small(**kwargs):
 
     return MobileNetV3(cfgs, mode='small', **kwargs)
 
-def test():
-    model = mobilenetv3_large(prob_dropout=0.2, type_dropout='gaussian')
-    x = torch.randn(10,3,128,128)
-    y = model(x)
-    out = model.make_logits(y)
-    print(len(out))
-
 if __name__ == '__main__':
     test()

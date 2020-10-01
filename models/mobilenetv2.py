@@ -199,11 +199,5 @@ def mobilenetv2(**kwargs):
     """
     return MobileNetV2(**kwargs)
 
-def test():
-    net = mobilenetv2(theta=0)
-    x = torch.randn(10,3,128,128)
-    y = net(x)
-    print(y.shape)
-
 if __name__ == '__main__':
     test()
