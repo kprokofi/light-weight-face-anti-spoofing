@@ -120,7 +120,7 @@ class InvertedResidual(nn.Module):
 class MobileNetV2(nn.Module):
     def __init__(self, width_mult=1., prob_dropout=0.1, type_dropout='bernoulli',
                  prob_dropout_linear=0.5, embeding_dim=1280, mu=0.5, sigma=0.3,
-                 theta=0, multi_heads=True):
+                 theta=0, multi_heads=True, scaling=1):
         super().__init__()
         # setting of inverted residual blocks
         self.multi_heads = multi_heads
@@ -171,7 +171,9 @@ class MobileNetV2(nn.Module):
         x = self.avgpool(x)
         x = x.view(x.size(0), -1)
         spoof_out = self.spoofer(x)
-        probab = F.softmax(spoof_out, dim=-1)
+        if isinstance(spoof_out, tuple):
+            spoof_out = spoof_out[0]
+        probab = F.softmax(spoof_out*self.scaling, dim=-1)
         return probab
 
     def make_logits(self, features):
@@ -205,4 +207,3 @@ def test():
 
 if __name__ == '__main__':
     test()
-

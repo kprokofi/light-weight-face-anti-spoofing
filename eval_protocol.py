@@ -79,7 +79,9 @@ def main():
     test_loader = DataLoader(dataset=test_dataset, batch_size=100, shuffle=True, num_workers=2)
 
     # computing metrics
-    auc_, eer, accur, apcer, bpcer, acer, fpr, tpr  = evaulate(model, test_loader, config, device, compute_accuracy=True)
+    auc_, eer, accur, apcer, bpcer, acer, fpr, tpr  = evaulate(model, test_loader,
+                                                               config, device,
+                                                               compute_accuracy=True)
     print(f'eer = {round(eer*100,2)}\n\
     accuracy on test data = {round(np.mean(accur),3)}\n\
     auc = {round(auc_,3)}\n\
@@ -148,7 +150,9 @@ def evaulate(model, loader, config, device, compute_accuracy=True):
     fnr_eer = fnr[np.nanargmin(np.absolute((fnr - fpr)))]
     eer = min(fpr_eer, fnr_eer)
     auc_ = auc(fpr, tpr)
-    to_return = (auc_, eer, accur, apcer, bpcer, acer, fpr, tpr) if compute_accuracy else (auc_, eer, apcer, bpcer, acer)
+    to_return = ((auc_, eer, accur, apcer, bpcer, acer, fpr, tpr)
+                if compute_accuracy
+                else (auc_, eer, apcer, bpcer, acer))
     return to_return
 
 def plot_roc_curve(fpr, tpr, config):
@@ -188,4 +192,3 @@ def det_curve(fps,fns, eer, config):
 
 if __name__ == "__main__":
     main()
-

@@ -97,14 +97,14 @@ def conv_3x3_bn(inp, oup, stride, theta):
         h_swish()
     )
 
-def conv_1x1_bn(inp, oup, theta):
+def conv_1x1_bn(inp, oup):
     return nn.Sequential(
         nn.Conv2d(inp, oup, 1, 1, 0, bias=False),
         nn.BatchNorm2d(oup),
         h_swish()
     )
 
-def conv_1x1_in(inp, oup, theta):
+def conv_1x1_in(inp, oup):
     return nn.Sequential(
         nn.Conv2d(inp, oup, 1, 1, 0, bias=False),
         nn.InstanceNorm2d(oup),
@@ -162,8 +162,8 @@ class InvertedResidual(nn.Module):
 class MobileNetV3(nn.Module):
     def __init__(self, cfgs, mode, prob_dropout, type_dropout,
                  prob_dropout_linear=0.5,
-                 embeding_dim=1280, mu=0.5, sigma=0.3,
-                 num_classes=1000, width_mult=1.,
+                 embeding_dim=1280, mu=0.5,
+                 sigma=0.3, width_mult=1.,
                  theta=0, multi_heads=True, scaling=1):
         super().__init__()
         # setting of inverted residual blocks
@@ -252,7 +252,7 @@ class MobileNetV3(nn.Module):
         x = x.view(x.size(0), -1)
         spoof_out = self.spoofer(x)
         if isinstance(spoof_out, tuple):
-                spoof_out = spoof_out[0]
+            spoof_out = spoof_out[0]
         probab = F.softmax(spoof_out*self.scaling, dim=-1)
         return probab
 
