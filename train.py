@@ -138,16 +138,13 @@ def train(config, device='cuda:0', save_chkpt=True):
         trainer.eval(epoch, accuracy, save_chkpt=save_chkpt)
         # for testing purposes
         if config.test_steps:
-            break
+            exit()
 
     # evaulate in the end of training
     if config.evaulation:
-        file_name1=f'{config.test_dataset.type}.txt'
-        file_name2=f'{config.dataset}.txt'
-        trainer.test(file_name=file_name1)
-        assert check_file_exist(f'{osp.join(config.checkpoint.experiment_path, file_name1)}')
-        trainer.test(file_name=file_name2)
-        assert check_file_exist(f'{osp.join(config.checkpoint.experiment_path, file_name2)}')
+        file_name = f'tests.txt'
+        trainer.test(file_name=file_name)
+
 
 if __name__=='__main__':
     main()

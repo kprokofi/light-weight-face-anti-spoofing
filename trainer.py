@@ -44,7 +44,6 @@ class Trainer:
         self.train_loader = train_loader
         self.val_loader = val_loader
         self.test_loader = test_loader
-        print(type(self.test_loader))
         self.train_step, self.val_step = 0, 0
         self.best_accuracy, self.current_accuracy, self.current_auc = 0, 0, 0
         self.current_eer, self.best_acer = float('inf'), float('inf')

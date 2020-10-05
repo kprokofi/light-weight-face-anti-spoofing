@@ -80,7 +80,7 @@ class CasiaSurfDataset(Dataset):
             img = cv.imread(img_path, flags=1)
             img = cv.cvtColor(img, cv.COLOR_BGR2RGB)
             if self.transform is not None:
-                img = self.transform(image=img)['image']
+                img = self.transform(label=label, img=img)['image']
             img = np.transpose(img, (2, 0, 1)).astype(np.float32)
             images += [torch.tensor(img)]
 
