@@ -28,7 +28,6 @@ from .casia_surf import CasiaSurfDataset
 from .lcc_fasd import LccFasdDataset
 
 def do_nothing(**args):
-    args = **args
     pass
 
 # import your reader and replace do_nothing with it

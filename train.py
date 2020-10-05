@@ -95,10 +95,12 @@ def train(config, device='cuda:0', save_chkpt=True):
     if sampler:
         num_instances, weights = make_weights(config)
         sampler = torch.utils.data.WeightedRandomSampler(weights, num_instances, replacement=True)
-    train_transform = Transform(train_spoof=train_transform_spoof, train_real=train_transform_real, val=None)
+    train_transform = Transform(train_spoof=train_transform_spoof,
+                                train_real=train_transform_real, val=None)
     val_transform = Transform(train_spoof=None, train_real=None, val=val_transform)
     train_dataset, val_dataset, test_dataset = make_dataset(config, train_transform, val_transform)
-    train_loader, val_loader, test_loader = make_loader(train_dataset, val_dataset, test_dataset, config, sampler=sampler)
+    train_loader, val_loader, test_loader = make_loader(train_dataset, val_dataset,
+                                                        test_dataset, config, sampler=sampler)
 
     # build model and put it to cuda and if it needed then wrap model to data parallel
     model = build_model(config, device=device, strict=False, mode='train')

@@ -114,7 +114,7 @@ def conv_1x1_in(inp, oup):
 
 class InvertedResidual(nn.Module):
     def __init__(self, inp, hidden_dim, oup, kernel_size, stride,
-                 use_se, use_hs, prob_dropout, type_dropout, sigma, mu, theta):
+                 use_se, use_hs, prob_dropout, type_dropout, sigma, mu):
         super(InvertedResidual, self).__init__()
         assert stride in [1, 2]
         self.identity = stride == 1 and inp == oup
@@ -189,8 +189,7 @@ class MobileNetV3(nn.Module):
                                                                 prob_dropout=self.prob_dropout,
                                                                 mu=self.mu,
                                                                 sigma=self.sigma,
-                                                                type_dropout=self.type_dropout,
-                                                                theta = self.theta))
+                                                                type_dropout=self.type_dropout))
             input_channel = output_channel
         self.features = nn.Sequential(*layers)
         # building last several layers
