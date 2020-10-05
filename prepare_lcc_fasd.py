@@ -48,7 +48,7 @@ def main():
                            ignore=shutil.ignore_patterns('*.png', '.*')))
     dir_path = osp.abspath(args.root_dir)
     for protocol in protocols:
-        data =  LCFAD(root_dir=args.root_dir, protocol=protocol,
+        data =  LccFasdDataset(root_dir=args.root_dir, protocol=protocol,
                       transform=None, get_img_path=True)
         for image, path in tqdm(data, desc=protocol, total=len(data), leave=False):
             if image.any():
