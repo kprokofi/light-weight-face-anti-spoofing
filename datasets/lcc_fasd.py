@@ -28,7 +28,7 @@ import torch
 from torch.utils.data import Dataset
 
 
-class LCFAD(Dataset):
+class LccFasdDataset(Dataset):
     def __init__(self, root_dir, protocol='train', transform=None, get_img_path=False):
         assert protocol in ['train', 'val', 'test', 'combine_partly', 'val_test', 'combine_all']
         self.root_dir = root_dir

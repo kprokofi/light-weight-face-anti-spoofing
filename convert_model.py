@@ -1,17 +1,13 @@
 '''MIT License
-
 Copyright (C) 2020 Prokofiev Kirill
-
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"),
 to deal in the Software without restriction, including without limitation
 the rights to use, copy, modify, merge, publish, distribute, sublicense,
 and/or sell copies of the Software, and to permit persons to whom
 the Software is furnished to do so, subject to the following conditions:
-
 The above copyright notice and this permission notice shall be included
 in all copies or substantial portions of the Software.
-
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
 OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
@@ -26,7 +22,7 @@ import os
 import torch
 
 from utils import build_model, load_checkpoint, read_py_config
-
+from models import mobilenetv3_large
 
 def main():
     # parse arguments
@@ -61,9 +57,9 @@ def export_onnx(config, device='cuda:0', num_layers=16,
     experiment_path = config.checkpoint.experiment_path
     path_to_experiment = os.path.join(experiment_path, experiment_snapshot)
     # input to inference model
-    dummy_input = torch.randn(1, 3, *img_size, device=device)
+    dummy_input = torch.rand(size=(1,3,*img_size), device=device)
     # build model
-    model = build_model(config, device=device, strict=False, mode='convert')
+    model = build_model(config, device, strict=True, mode='convert')
     model.to(device)
     # if model trained as data parallel object
     if config.data_parallel.use_parallel:

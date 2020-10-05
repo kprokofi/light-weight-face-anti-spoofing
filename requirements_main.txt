@@ -10,3 +10,4 @@ tqdm==4.50.0
 matplotlib==3.3.2
 tensorboard==2.3.0
 onnx==1.7.0
+glog==0.3.1

@@ -194,7 +194,7 @@ class MobileNetV3(nn.Module):
             input_channel = output_channel
         self.features = nn.Sequential(*layers)
         # building last several layers
-        self.conv_last = conv_1x1_bn(input_channel, embeding_dim, theta=self.theta)
+        self.conv_last = conv_1x1_bn(input_channel, embeding_dim)
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         # bulding heads for multi task
         self.spoofer = nn.Sequential(
@@ -245,7 +245,6 @@ class MobileNetV3(nn.Module):
         return x
 
     def forward_to_onnx(self,x):
-        x = self.instanorm(x)
         x = self.features(x)
         x = self.conv_last(x)
         x = self.avgpool(x)
@@ -317,6 +316,3 @@ def mobilenetv3_small(**kwargs):
     ]
 
     return MobileNetV3(cfgs, mode='small', **kwargs)
-
-if __name__ == '__main__':
-    test()

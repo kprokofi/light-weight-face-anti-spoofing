@@ -82,13 +82,13 @@ def main():
     auc_, eer, accur, apcer, bpcer, acer, fpr, tpr  = evaulate(model, test_loader,
                                                                config, device,
                                                                compute_accuracy=True)
-    print(f'eer = {round(eer*100,2)}\n\
-    accuracy on test data = {round(np.mean(accur),3)}\n\
-    auc = {round(auc_,3)}\n\
-    apcer = {round(apcer*100,2)}\n\
-    bpcer = {round(bpcer*100,2)}\n\
-    acer = {round(acer*100,2)}\n\
-    checkpoint made on {epoch_of_checkpoint} epoch')
+    print((f'eer = {round(eer*100,2)}\n'
+           + f'accuracy on test data = {round(np.mean(accur),3)}\n'
+           + f'auc = {round(auc_,3)}\n'
+           + f'apcer = {round(apcer*100,2)}\n'
+           + f'bpcer = {round(bpcer*100,2)}\n'
+           + f'acer = {round(acer*100,2)}\n'
+           + f'checkpoint made on {epoch_of_checkpoint} epoch'))
 
     # draw graphics if needed
     if args.draw_graph:

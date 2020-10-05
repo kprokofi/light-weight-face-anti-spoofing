@@ -198,6 +198,3 @@ def mobilenetv2(**kwargs):
     Constructs a MobileNet V2 model
     """
     return MobileNetV2(**kwargs)
-
-if __name__ == '__main__':
-    test()

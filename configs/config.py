@@ -1,16 +1,18 @@
 exp_num = 0
 
-dataset = 'celeba-spoof'
+dataset = 'celeba_spoof'
 
 multi_task_learning = True
 
 evaulation = True
 
-test_steps=None
+test_steps = None
 
 datasets = dict(LCCFASD_root='./LCC_FASDcropped',
                 Celeba_root='./CelebA_Spoof',
                 Casia_root='./CASIA')
+
+external = dict(train=dict(), val=dict(), test=dict())
 
 img_norm_cfg = dict(mean=[0.5931, 0.4690, 0.4229],
                     std=[0.2471, 0.2214, 0.2157])

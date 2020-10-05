@@ -21,6 +21,7 @@ ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
 OR OTHER DEALINGS IN THE SOFTWARE.'''
 
 import argparse
+import os.path as osp
 
 import albumentations as A
 import cv2 as cv
@@ -30,7 +31,7 @@ from torch.utils.data import DataLoader
 
 from trainer import Trainer
 from utils import (Transform, build_criterion, build_model, make_dataset,
-                   make_loader, make_weights, read_py_config)
+                   make_loader, make_weights, read_py_config, check_file_exist)
 
 
 def main():
@@ -97,9 +98,9 @@ def train(config, device='cuda:0', save_chkpt=True):
         sampler = torch.utils.data.WeightedRandomSampler(weights, num_instances, replacement=True)
     train_transform = Transform(train_spoof=train_transform_spoof, train_real=train_transform_real, val=None)
     val_transform = Transform(train_spoof=None, train_real=None, val=val_transform)
-    train_dataset, val_dataset = make_dataset(config, train_transform, val_transform)
+    train_dataset, val_dataset, test_dataset = make_dataset(config, train_transform, val_transform)
     train_loader, val_loader = make_loader(train_dataset, val_dataset, config, sampler=sampler)
-    test_dataset = make_dataset(config, val_transform=val_transform, mode='eval')
+    # test_dataset = make_dataset(config, val_transform=val_transform, mode='eval')
     test_loader = DataLoader(dataset=test_dataset, batch_size=config.data.batch_size,
                                                 shuffle=True, pin_memory=config.data.pin_memory,
                                                 num_workers=config.data.data_loader_workers)
@@ -143,9 +144,13 @@ def train(config, device='cuda:0', save_chkpt=True):
             break
 
     # evaulate in the end of training
-    if config.evaulation and not config.test_steps:
-        trainer.test(val_transform, file_name='LCC_FASD.txt', flag=None)
-        trainer.test(val_transform, file_name='Celeba_test.txt', flag=True)
+    if config.evaulation:
+        file_name1=f'{config.test_dataset.type}.txt'
+        file_name2=f'{config.dataset}.txt'
+        trainer.test(val_transform, file_name=file_name1, flag=None)
+        assert check_file_exist(f'{osp.join(config.checkpoint.experiment_path, file_name1)}')
+        trainer.test(val_transform, file_name=file_name2, flag=True)
+        assert check_file_exist(f'{osp.join(config.checkpoint.experiment_path, file_name2)}')
 
 if __name__=='__main__':
     main()

@@ -32,7 +32,7 @@ import torch
 from attrdict import AttrDict as adict
 from torch.utils.data import DataLoader
 
-from datasets import LCFAD, CasiaSurfDataset, CelebASpoofDataset, MultiDataset
+from datasets import get_datasets
 from losses import (AMSoftmaxLoss, AngleSimpleLinear, SoftTripleLinear,
                     SoftTripleLoss)
 from models import mobilenetv2, mobilenetv3_large, mobilenetv3_small
@@ -177,44 +177,19 @@ def freeze_layers(model, open_layers):
             for p in module.parameters():
                 p.requires_grad = False
 
-def make_dataset(config: dict, train_transform: object = None, val_transform: object = None,
-                mode='train'):
+def make_dataset(config: dict, train_transform: object = None, val_transform: object = None, mode='train'):
     ''' make train, val or test datasets '''
-    celeba_root = config.datasets.Celeba_root
-    lccfasd_root = config.datasets.LCCFASD_root
-    casia_root = config.datasets.Casia_root
-
+    datasets = get_datasets(config)
+    train_data = datasets[config.dataset + '_train'](transform=train_transform)
+    val_data = datasets[config.dataset + '_val'](transform=val_transform)
+    if config.test_dataset.type == 'LCC_FASD' and config.dataset == 'celeba_spoof':
+        test_data = datasets['LCC_FASD_combined'](transform=val_transform)
+    else:
+        test_data = datasets[config.test_dataset.type + '_test'](transform=val_transform)
     if mode == 'train':
-        if config.dataset == 'LCC_FASD':
-            train =  LCFAD(root_dir=lccfasd_root, protocol='train', transform=train_transform)
-            val = LCFAD(root_dir=lccfasd_root, protocol='val', transform=val_transform)
-        elif config.dataset == 'celeba-spoof':
-            train =  CelebASpoofDataset(root_folder=celeba_root, test_mode=False,
-                                        transform=train_transform, multi_learning=config.multi_task_learning)
-            val = CelebASpoofDataset(root_folder=celeba_root, test_mode=True,
-                                     transform=val_transform, multi_learning=config.multi_task_learning)
-        elif config.dataset == 'Casia':
-            train = CasiaSurfDataset(protocol=1, dir_=casia_root, mode='train', transform=train_transform)
-            val = CasiaSurfDataset(protocol=1, dir_=casia_root, mode='dev', transform=val_transform)
-        elif config.dataset == 'multi_dataset':
-            train = MultiDataset(lccfasd_root, celeba_root, train=True, transform=train_transform,
-                                 LCFASD_train_protocol='combine_all', LCFASD_val_protocol='val_test')
-            val = MultiDataset(lccfasd_root, celeba_root, train=False, transform=val_transform,
-                               LCFASD_train_protocol='combine_all', LCFASD_val_protocol='val_test')
-        return train, val
-
-    if mode == 'eval':
-        if  config.test_dataset.type == 'LCC_FASD' and config.dataset == 'celeba-spoof':
-            test = LCFAD(root_dir=lccfasd_root, protocol='combine_all', transform=val_transform)
-        elif config.test_dataset.type == 'LCC_FASD':
-            assert config.dataset != 'celeba-spoof'
-            test = LCFAD(root_dir=lccfasd_root, protocol='test', transform=val_transform)
-        elif config.test_dataset.type == 'Casia':
-            test = CasiaSurfDataset(protocol=1, dir_=casia_root, mode='test', transform=val_transform)
-        elif config.test_dataset.type == 'celeba-spoof':
-            test = CelebASpoofDataset(root_folder=celeba_root, test_mode=True, transform=val_transform,
-                                      multi_learning=config.multi_task_learning)
-        return test
+        return train_data, val_data, test_data
+    else:
+        return test_data
 
 def make_loader(train, val, config, sampler=None):
     ''' make data loader from given train and val dataset

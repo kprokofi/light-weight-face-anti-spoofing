@@ -31,8 +31,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from ie_tools import load_ie_model
 
+from .ie_tools import load_ie_model
 current_dir = osp.dirname(osp.abspath(inspect.getfile(inspect.currentframe())))
 parent_dir = osp.dirname(current_dir)
 sys.path.insert(0, parent_dir)
@@ -82,13 +82,22 @@ class FaceDetector:
 
 class VectorCNN:
     """Wrapper class for a nework returning a vector"""
-    def __init__(self, model_path, device='CPU'):
+    def __init__(self, model_path, config, device='CPU'):
         self.net = load_ie_model(model_path, device, None)
+        self.config = config
 
     def forward(self, batch):
         """Performs forward of the underlying network on a given batch"""
         _, _, h, w = self.net.get_input_shape().shape
-        outputs = [self.net.forward(cv.resize(frame, (w, h))) for frame in batch]
+        outputs = []
+        mean = np.array(object=self.config.img_norm_cfg.mean).reshape((1,1,3))
+        std = np.array(object=self.config.img_norm_cfg.std).reshape((1,1,3))
+        for img in batch:
+            img = cv.resize(img, (h, w) , interpolation=cv.INTER_CUBIC)
+            img = cv.cvtColor(img, cv.COLOR_BGR2RGB)
+            img = img/255
+            img = (img - mean)/std
+            outputs.append(self.net.forward(img))
         return outputs
 
 class TorchCNN:
@@ -105,13 +114,15 @@ class TorchCNN:
         mean = np.array(object=self.config.img_norm_cfg.mean).reshape((3,1,1))
         std = np.array(object=self.config.img_norm_cfg.std).reshape((3,1,1))
         height, width = list(self.config.resize.values())
-        for i,_ in enumerate(images):
-            images[i] = cv.resize(images[i], (height, width) , interpolation=cv.INTER_CUBIC)
-            images[i] = cv.cvtColor(images[i], cv.COLOR_BGR2RGB)
-            images[i] = np.transpose(images[i], (2, 0, 1)).astype(np.float32)
-            images[i] = images[i]/255
-            images[i] = (images[i] - mean)/std
-        return torch.tensor(images, dtype=torch.float32)
+        preprocessed_imges = []
+        for img in images:
+            img = cv.resize(img, (height, width) , interpolation=cv.INTER_CUBIC)
+            img = cv.cvtColor(img, cv.COLOR_BGR2RGB)
+            img = np.transpose(img, (2, 0, 1)).astype(np.float32)
+            img = img/255
+            img = (img - mean)/std
+            preprocessed_imges.append(img)
+        return torch.tensor(preprocessed_imges, dtype=torch.float32)
 
     def forward(self, batch):
         batch = self.preprocessing(batch)
@@ -120,12 +131,8 @@ class TorchCNN:
                   if self.config.data_parallel.use_parallel
                   else self.model)
         with torch.no_grad():
-            features = model1.forward(batch)
-            output = model1.spoof_task(features)
-            if isinstance(output, tuple):
-                output = output[0]
-            confidence = F.softmax(output, dim=-1).detach().numpy()
-            return confidence
+            output = model1.forward_to_onnx(batch)
+            return output.detach().numpy()
 
 def pred_spoof(frame, detections, spoof_model):
     """Get prediction for all detected faces on the frame"""
@@ -162,7 +169,8 @@ def run(params, capture, face_det, spoof_model, write_video=False):
     """Starts the anti spoofing demo"""
     fourcc = cv.VideoWriter_fourcc(*'MP4V')
     resolution = (1280,720)
-    writer_video = cv.VideoWriter('output_video.mp4', fourcc, 24, resolution)
+    fps = 24
+    writer_video = cv.VideoWriter('output_video_demo.mp4', fourcc, fps, resolution)
     win_name = 'Antispoofing Recognition'
     while cv.waitKey(1) != 27:
         has_frame, frame = capture.read()
@@ -174,6 +182,9 @@ def run(params, capture, face_det, spoof_model, write_video=False):
         cv.imshow(win_name, frame)
         if write_video:
             writer_video.write(cv.resize(frame, resolution))
+    capture.release()
+    writer_video.release()
+    cv.destroyAllWindows()
 
 def main():
     """Prepares data for the antispoofing recognition demo"""
@@ -196,11 +207,10 @@ def main():
                              'impl.', type=str, default=None)
     parser.add_argument('--write_video', type=bool, default=False,
                         help='if you set this arg to True, the video of the demo will be recoreded')
-
     args = parser.parse_args()
-    config = utils.read_py_config(args.config)
     device = args.device + f':{args.GPU}' if args.device == 'cuda' else 'cpu'
     write_video = args.write_video
+    config = utils.read_py_config(args.config)
 
     if args.cam_id >= 0:
         log.info('Reading from cam {}'.format(args.cam_id))
@@ -220,7 +230,7 @@ def main():
         spoof_model = TorchCNN(spoof_model, args.spf_model, config, device=device)
     else:
         assert args.spf_model.endswith('.xml')
-        spoof_model = VectorCNN(args.spf_model)
+        spoof_model = VectorCNN(args.spf_model, config)
     # running demo
     run(args, cap, face_detector, spoof_model, write_video)
 

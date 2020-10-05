@@ -45,6 +45,7 @@ class Trainer:
         self.train_loader = train_loader
         self.val_loader = val_loader
         self.test_loader = test_loader
+        print(type(self.test_loader))
         self.train_step, self.val_step = 0, 0
         self.best_accuracy, self.current_accuracy, self.current_auc = 0, 0, 0
         self.current_eer, self.best_acer = float('inf'), float('inf')
@@ -169,35 +170,24 @@ class Trainer:
 
     def eval(self, epoch: int, epoch_accuracy: float, save_chkpt: bool=True):
         # evaluate on last 10 epoch and remember best accuracy, AUC, EER, ACER and then save checkpoint
-        if (epoch == 0 or epoch >=60) and (epoch_accuracy > self.current_accuracy):
+        if (epoch%10 == 0 or epoch >= (self.config.max_epoch - 10)) and (epoch_accuracy > self.current_accuracy):
+            print('__VAL__:')
             AUC, EER, apcer, bpcer, acer = evaulate(self.model, self.val_loader,
                                                     self.config, self.device, compute_accuracy=False)
-            print(f'__VAL__: epoch: {epoch}   AUC: {AUC}   EER: {EER}   APCER: {apcer}\
-                BPCER: {bpcer}   ACER: {acer}')
-            if acer < self.best_acer and save_chkpt:
+            print_result(AUC, EER, accur, apcer, bpcer, acer)
+            if acer < self.best_acer:
                 self.best_acer = acer
-                checkpoint = {'state_dict': self.model.state_dict(),
-                              'optimizer': self.optimizer.state_dict(), 'epoch': epoch}
-                save_checkpoint(checkpoint, f'{self.path_to_checkpoint}')
+                if save_chkpt:
+                    checkpoint = {'state_dict': self.model.state_dict(),
+                                'optimizer': self.optimizer.state_dict(), 'epoch': epoch}
+                    save_checkpoint(checkpoint, f'{self.path_to_checkpoint}')
                 self.current_accuracy = epoch_accuracy
                 self.current_eer = EER
                 self.current_auc = AUC
                 AUC, EER, accur, apcer, bpcer, acer, _, _ = evaulate(self.model, self.test_loader, self.config,
                                                                      self.device, compute_accuracy=True)
-                print(f'__TEST__: epoch: {epoch}  accur: {round(np.mean(accur),3)}   AUC: {AUC}   EER: {EER}\
-                        APCER: {apcer}   BPCER: {bpcer}   ACER: {acer}')
-
-        # evaluate on val every 10 epoch except last one and save checkpoint
-        if (epoch%10 == 0) and (epoch not in (self.config.epochs.max_epoch - 1, 0, 60)) and (save_chkpt):
-            # printing results
-            AUC, EER, accur, apcer, bpcer, acer, _, _ = evaulate(self.model, self.test_loader,
-                                                                 self.config, self.device,
-                                                                 compute_accuracy=True)
-            print(f'epoch: {epoch}  accur: {round(np.mean(accur),3)}\
-                   AUC: {AUC}   EER: {EER}   APCER: {apcer}   BPCER: {bpcer}   ACER: {acer}')
-            checkpoint = {'state_dict': self.model.state_dict(),
-                          'optimizer': self.optimizer.state_dict(), 'epoch':epoch}
-            save_checkpoint(checkpoint, f'{self.path_to_checkpoint}')
+                print('__TEST__:')
+                print_result(AUC, EER, accur, apcer, bpcer, acer)
 
     def make_output(self, input_: torch.tensor, target: torch.tensor):
         ''' target - one hot for main task
@@ -307,75 +297,73 @@ class Trainer:
         return criterion(pred, mixed_target)
 
     def test(self, transform, file_name, flag=None):
-        if flag:
-            self.config['test_dataset']['type'] = 'celeba-spoof'
+        ''' get metrics and record it to the file '''
         print('_____________EVAULATION_____________')
         # load snapshot
         epoch_of_checkpoint = load_checkpoint(self.path_to_checkpoint, self.model,
                                               map_location=self.device, optimizer=None,
                                               strict=True)
-        # making dataset
-        test_dataset = make_dataset(self.config, val_transform=transform, mode='eval')
-        test_loader = DataLoader(dataset=test_dataset, batch_size=self.config.data.batch_size,
-                                                    shuffle=True, pin_memory=self.config.data.pin_memory,
-                                                    num_workers=self.config.data.data_loader_workers)
-        # printing results
-        AUC, EER, accur, apcer, bpcer, acer, _, _ = evaulate(self.model, test_loader, self.config,
-                                                             self.device, compute_accuracy=True)
-        results = f'''accuracy on test data = {round(np.mean(accur),3)}\n
-        AUC = {round(AUC,3)}\n
-        EER = {round(EER*100,2)}\n
-        apcer = {round(apcer*100,2)}\n
-        bpcer = {round(bpcer*100,2)}\n
-        acer = {round(acer*100,2)}\n
-        checkpoint made on {epoch_of_checkpoint} epoch\n
-        {round(np.mean(accur),3)};;;{round(AUC,3)};;;{round(EER*100,2)};;;\
-            {round(apcer*100,2)};;;{round(bpcer*100,2)};;;{round(acer*100,2)}'''
+        for loader in (self.val_loader, self.test_loader):
+            # printing results
+            AUC, EER, accur, apcer, bpcer, acer, _, _ = evaulate(self.model, test_loader, self.config,
+                                                                self.device, compute_accuracy=True)
+            results = print_result(AUC, EER, accur, apcer, bpcer, acer)
+            with open(os.path.join(self.config.checkpoint.experiment_path, file_name), 'a') as f:
+                f.write(results)
 
-        with open(os.path.join(self.config.checkpoint.experiment_path, file_name), 'w') as f:
-            f.write(results)
+    @staticmethod
+    def print_result(AUC, EER, accur, apcer, bpcer, acer):
+        results = (f'accuracy on test data = {round(np.mean(accur),3)}\n'
+                   + f'AUC = {round(AUC,3)}\n'
+                   + f'EER = {round(EER*100,2)}\n'
+                   + f'apcer = {round(apcer*100,2)}\n'
+                   + f'bpcer = {round(bpcer*100,2)}\n'
+                   + f'acer = {round(acer*100,2)}\n'
+                   + f'checkpoint made on {epoch_of_checkpoint} epoch')
+        return result
 
     def get_exp_info(self):
-        exp_num = self.config.exp_num
-        print(f'_______INIT EXPERIMENT {exp_num}______')
-        train_dataset, test_dataset = self.config.dataset, self.config.test_dataset.type
-        print(f'training on {train_dataset}, testing on {test_dataset}')
-        print('\n\nSNAPSHOT')
-        for key, item in self.config.checkpoint.items():
-            print(f'{key} --> {item}')
-        print('\n\nMODEL')
-        for key, item in self.config.model.items():
-            print(f'{key} --> {item}')
-        loss_type = self.config.loss.loss_type
-        print(f'\n\nLOSS TYPE : {loss_type.upper()}')
-        for key, item in self.config.loss[f'{loss_type}'].items():
-            print(f'{key} --> {item}')
-        print('\n\nDROPOUT PARAMS')
-        for key, item in self.config.dropout.items():
-            print(f'{key} --> {item}')
-        print('\n\nOPTIMAIZER')
-        for key, item in self.config.optimizer.items():
-            print(f'{key} --> {item}')
-        print('\n\nADDITIONAL USING PARAMETRS')
-        if self.config.aug.type_aug:
-            type_aug = self.config.aug.type_aug
-            print(f'\nAUG TYPE = {type_aug} USING')
-            for key, item in self.config.aug.items():
+        if not self.config.test_steps:
+            exp_num = self.config.exp_num
+            print(f'_______INIT EXPERIMENT {exp_num}______')
+            train_dataset, test_dataset = self.config.dataset, self.config.test_dataset.type
+            print(f'training on {train_dataset}, testing on {test_dataset}')
+            print('\n\nSNAPSHOT')
+            for key, item in self.config.checkpoint.items():
                 print(f'{key} --> {item}')
-        if self.config.RSC.use_rsc:
-            print('RSC USING')
-            for key, item in self.config.RSC.items():
+            print('\n\nMODEL')
+            for key, item in self.config.model.items():
                 print(f'{key} --> {item}')
-        if self.data_parallel:
-            ids = self.config.data_parallel.parallel_params.device_ids
-            print(f'USING DATA PATALLEL ON {ids[0]} and {ids[1]} GPU')
-        if self.config.data.sampler:
-            print('USING SAMPLER')
-        if self.config.loss.amsoftmax.ratio != (1,1):
-            print(self.config.loss.amsoftmax.ratio)
-            print('USING ADAPTIVE LOSS')
-        if self.config.multi_task_learning:
-            print('multi_task_learning using'.upper())
-        theta = self.config.conv_cd.theta
-        if theta > 0:
-            print(f'CDC method: {theta}')
+            loss_type = self.config.loss.loss_type
+            print(f'\n\nLOSS TYPE : {loss_type.upper()}')
+            for key, item in self.config.loss[f'{loss_type}'].items():
+                print(f'{key} --> {item}')
+            print('\n\nDROPOUT PARAMS')
+            for key, item in self.config.dropout.items():
+                print(f'{key} --> {item}')
+            print('\n\nOPTIMAIZER')
+            for key, item in self.config.optimizer.items():
+                print(f'{key} --> {item}')
+            print('\n\nADDITIONAL USING PARAMETRS')
+            if self.config.aug.type_aug:
+                type_aug = self.config.aug.type_aug
+                print(f'\nAUG TYPE = {type_aug} USING')
+                for key, item in self.config.aug.items():
+                    print(f'{key} --> {item}')
+            if self.config.RSC.use_rsc:
+                print('RSC USING')
+                for key, item in self.config.RSC.items():
+                    print(f'{key} --> {item}')
+            if self.data_parallel:
+                ids = self.config.data_parallel.parallel_params.device_ids
+                print(f'USING DATA PATALLEL ON {ids} GPU')
+            if self.config.data.sampler:
+                print('USING SAMPLER')
+            if self.config.loss.amsoftmax.ratio != (1,1):
+                print(self.config.loss.amsoftmax.ratio)
+                print('USING ADAPTIVE LOSS')
+            if self.config.multi_task_learning:
+                print('multi_task_learning using'.upper())
+            theta = self.config.conv_cd.theta
+            if theta > 0:
+                print(f'CDC method: {theta}')
