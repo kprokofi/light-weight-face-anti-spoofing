@@ -61,7 +61,7 @@ def get_datasets(config):
 
                 'LCC_FASD_train': partial(LccFasdDataset, root_dir=lccfasd_root, protocol='train'),
 
-                'LCC_FASD_val': partial(LccFasdDataset, root_dir=lccfasd_root, protocol='val',),
+                'LCC_FASD_val': partial(LccFasdDataset, root_dir=lccfasd_root, protocol='val'),
 
                 'LCC_FASD_test': partial(LccFasdDataset, root_dir=lccfasd_root, protocol='test'),
 
