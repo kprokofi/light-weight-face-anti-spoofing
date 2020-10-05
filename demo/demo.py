@@ -30,7 +30,6 @@ import glog as log
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from .ie_tools import load_ie_model
 current_dir = osp.dirname(osp.abspath(inspect.getfile(inspect.currentframe())))

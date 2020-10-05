@@ -62,16 +62,16 @@ def conv_3x3_in(inp, oup, stride, theta):
         nn.ReLU6(inplace=True)
     )
 
-def conv_1x1_bn(inp, oup, theta):
+def conv_1x1_bn(inp, oup):
     return nn.Sequential(
-        Conv2d_cd(inp, oup, 1, 1, 0, bias=False, theta=theta),
+        nn.Conv2d(inp, oup, 1, 1, 0, bias=False),
         nn.BatchNorm2d(oup),
         nn.ReLU6(inplace=True)
     )
 
 def conv_1x1_in(inp, oup, theta):
     return nn.Sequential(
-        Conv2d_cd(inp, oup, 1, 1, 0, bias=False, theta=theta),
+        nn.Conv2d(inp, oup, 1, 1, 0, bias=False),
         nn.InstanceNorm2d(oup),
         nn.ReLU6(inplace=True)
     )
@@ -92,13 +92,13 @@ class InvertedResidual(nn.Module):
                 nn.BatchNorm2d(hidden_dim),
                 nn.ReLU6(inplace=True),
                 # pw-linear
-                Conv2d_cd(hidden_dim, oup, 1, 1, 0, bias=False, theta=theta),
+                nn.Conv2d(hidden_dim, oup, 1, 1, 0, bias=False, theta=theta),
                 nn.BatchNorm2d(oup),
             )
         else:
             self.conv = nn.Sequential(
                 # pw
-                Conv2d_cd(inp, hidden_dim, 1, 1, 0, bias=False, theta=theta),
+                nn.Conv2d(inp, hidden_dim, 1, 1, 0, bias=False, theta=theta),
                 nn.BatchNorm2d(hidden_dim),
                 nn.ReLU6(inplace=True),
                 # dw
@@ -106,7 +106,7 @@ class InvertedResidual(nn.Module):
                 nn.BatchNorm2d(hidden_dim),
                 nn.ReLU6(inplace=True),
                 # pw-linear
-                Conv2d_cd(hidden_dim, oup, 1, 1, 0, bias=False, theta=theta),
+                nn.Conv2d(hidden_dim, oup, 1, 1, 0, bias=False, theta=theta),
                 nn.BatchNorm2d(oup),
             )
 
@@ -124,6 +124,7 @@ class MobileNetV2(nn.Module):
         super().__init__()
         # setting of inverted residual blocks
         self.multi_heads = multi_heads
+        self.scaling = scaling
         self.prob_dropout_linear = prob_dropout_linear
         self.cfgs = [
             # t, c, n, s

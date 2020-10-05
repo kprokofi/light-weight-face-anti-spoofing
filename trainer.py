@@ -25,12 +25,11 @@ import os
 import numpy as np
 import torch
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from eval_protocol import evaulate
-from utils import (AverageMeter, cutmix, load_checkpoint, make_dataset,
+from utils import (AverageMeter, cutmix, load_checkpoint,
                    mixup_target, precision, save_checkpoint)
 
 
@@ -296,13 +295,14 @@ class Trainer:
         mixed_target = lam * ya_hot  + (1 - lam) * yb_hot
         return criterion(pred, mixed_target)
 
-    def test(self, transform, file_name, flag=None):
+    def test(self, file_name):
         ''' get metrics and record it to the file '''
         print('_____________EVAULATION_____________')
         # load snapshot
-        epoch_of_checkpoint = load_checkpoint(self.path_to_checkpoint, self.model,
-                                              map_location=self.device, optimizer=None,
-                                              strict=True)
+        load_checkpoint(self.path_to_checkpoint, self.model,
+                        map_location=self.device, optimizer=None,
+                        strict=True)
+
         for loader in (self.val_loader, self.test_loader):
             # printing results
             AUC, EER, accur, apcer, bpcer, acer, _, _ = evaulate(self.model, loader, self.config,

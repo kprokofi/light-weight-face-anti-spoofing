@@ -22,13 +22,13 @@ ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
 OR OTHER DEALINGS IN THE SOFTWARE.'''
 
 from functools import partial
-from torch.utils.data import Dataset
 
 from .celeba_spoof import CelebASpoofDataset
 from .casia_surf import CasiaSurfDataset
 from .lcc_fasd import LccFasdDataset
 
 def do_nothing(**args):
+    args = **args
     pass
 
 # import your reader and replace do_nothing with it

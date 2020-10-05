@@ -22,7 +22,6 @@ import os
 import torch
 
 from utils import build_model, load_checkpoint, read_py_config
-from models import mobilenetv3_large
 
 def main():
     # parse arguments

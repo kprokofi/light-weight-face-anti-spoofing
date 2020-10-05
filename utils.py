@@ -189,6 +189,7 @@ def make_dataset(config: dict, train_transform: object = None, val_transform: ob
     if mode == 'train':
         return train_data, val_data, test_data
     else:
+        assert mode == 'eval'
         return test_data
 
 def make_loader(train, val, config, sampler=None):
