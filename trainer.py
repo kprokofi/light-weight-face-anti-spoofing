@@ -174,7 +174,7 @@ class Trainer:
             print('__VAL__:')
             AUC, EER, apcer, bpcer, acer = evaulate(self.model, self.val_loader,
                                                     self.config, self.device, compute_accuracy=False)
-            print_result(AUC, EER, accur, apcer, bpcer, acer)
+            print(self.print_result(AUC, EER, epoch_accuracy, apcer, bpcer, acer))
             if acer < self.best_acer:
                 self.best_acer = acer
                 if save_chkpt:
@@ -187,7 +187,7 @@ class Trainer:
                 AUC, EER, accur, apcer, bpcer, acer, _, _ = evaulate(self.model, self.test_loader, self.config,
                                                                      self.device, compute_accuracy=True)
                 print('__TEST__:')
-                print_result(AUC, EER, accur, apcer, bpcer, acer)
+                print(self.print_result(AUC, EER, accur, apcer, bpcer, acer))
 
     def make_output(self, input_: torch.tensor, target: torch.tensor):
         ''' target - one hot for main task
@@ -305,9 +305,9 @@ class Trainer:
                                               strict=True)
         for loader in (self.val_loader, self.test_loader):
             # printing results
-            AUC, EER, accur, apcer, bpcer, acer, _, _ = evaulate(self.model, test_loader, self.config,
+            AUC, EER, accur, apcer, bpcer, acer, _, _ = evaulate(self.model, loader, self.config,
                                                                 self.device, compute_accuracy=True)
-            results = print_result(AUC, EER, accur, apcer, bpcer, acer)
+            results = self.print_result(AUC, EER, accur, apcer, bpcer, acer)
             with open(os.path.join(self.config.checkpoint.experiment_path, file_name), 'a') as f:
                 f.write(results)
 
@@ -318,9 +318,8 @@ class Trainer:
                    + f'EER = {round(EER*100,2)}\n'
                    + f'apcer = {round(apcer*100,2)}\n'
                    + f'bpcer = {round(bpcer*100,2)}\n'
-                   + f'acer = {round(acer*100,2)}\n'
-                   + f'checkpoint made on {epoch_of_checkpoint} epoch')
-        return result
+                   + f'acer = {round(acer*100,2)}\n')
+        return results
 
     def get_exp_info(self):
         if not self.config.test_steps:

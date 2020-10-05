@@ -27,7 +27,7 @@ import shutil
 import cv2 as cv
 from tqdm import tqdm
 
-from datasets import LCFAD
+from datasets import LccFasdDataset
 from demo.demo import FaceDetector
 
 
