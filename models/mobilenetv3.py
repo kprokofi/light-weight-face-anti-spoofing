@@ -125,7 +125,7 @@ class InvertedResidual(nn.Module):
             self.conv = nn.Sequential(
                 # dw
                 nn.Conv2d(hidden_dim, hidden_dim, kernel_size, stride,
-                         (kernel_size - 1) // 2, groups=hidden_dim, bias=False, theta=theta),
+                         (kernel_size - 1) // 2, groups=hidden_dim, bias=False),
                 nn.BatchNorm2d(hidden_dim),
                 h_swish() if use_hs else nn.ReLU(inplace=True),
                 # Squeeze-and-Excite
@@ -142,7 +142,7 @@ class InvertedResidual(nn.Module):
                 h_swish() if use_hs else nn.ReLU(inplace=True),
                 # dw
                 nn.Conv2d(hidden_dim, hidden_dim, kernel_size, stride,
-                         (kernel_size - 1) // 2, groups=hidden_dim, bias=False, theta=theta),
+                         (kernel_size - 1) // 2, groups=hidden_dim, bias=False),
                 nn.BatchNorm2d(hidden_dim),
                 # Squeeze-and-Excite
                 SELayer(hidden_dim) if use_se else nn.Identity(),

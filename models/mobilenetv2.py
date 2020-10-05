@@ -69,7 +69,7 @@ def conv_1x1_bn(inp, oup):
         nn.ReLU6(inplace=True)
     )
 
-def conv_1x1_in(inp, oup, theta):
+def conv_1x1_in(inp, oup):
     return nn.Sequential(
         nn.Conv2d(inp, oup, 1, 1, 0, bias=False),
         nn.InstanceNorm2d(oup),
@@ -92,13 +92,13 @@ class InvertedResidual(nn.Module):
                 nn.BatchNorm2d(hidden_dim),
                 nn.ReLU6(inplace=True),
                 # pw-linear
-                nn.Conv2d(hidden_dim, oup, 1, 1, 0, bias=False, theta=theta),
+                nn.Conv2d(hidden_dim, oup, 1, 1, 0, bias=False),
                 nn.BatchNorm2d(oup),
             )
         else:
             self.conv = nn.Sequential(
                 # pw
-                nn.Conv2d(inp, hidden_dim, 1, 1, 0, bias=False, theta=theta),
+                nn.Conv2d(inp, hidden_dim, 1, 1, 0, bias=False),
                 nn.BatchNorm2d(hidden_dim),
                 nn.ReLU6(inplace=True),
                 # dw
@@ -106,7 +106,7 @@ class InvertedResidual(nn.Module):
                 nn.BatchNorm2d(hidden_dim),
                 nn.ReLU6(inplace=True),
                 # pw-linear
-                nn.Conv2d(hidden_dim, oup, 1, 1, 0, bias=False, theta=theta),
+                nn.Conv2d(hidden_dim, oup, 1, 1, 0, bias=False),
                 nn.BatchNorm2d(oup),
             )
 
@@ -153,7 +153,7 @@ class MobileNetV2(nn.Module):
                 input_channel = output_channel
         self.features = nn.Sequential(*layers)
         # building last several layers
-        self.conv_last = conv_1x1_bn(input_channel, embeding_dim, theta=theta)
+        self.conv_last = conv_1x1_bn(input_channel, embeding_dim)
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.spoofer = nn.Linear(embeding_dim, 2)
         if self.multi_heads:

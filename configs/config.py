@@ -47,7 +47,7 @@ epochs = dict(start_epoch=0, max_epoch=71)
 model= dict(model_type='Mobilenet3',
             model_size = 'large',
             pretrained=True,
-            embeding_dim=512,
+            embeding_dim=1280,
             imagenet_weights='./pretrained/mobilenetv3-large-1cd25616.pth')
 
 aug = dict(type_aug=None,

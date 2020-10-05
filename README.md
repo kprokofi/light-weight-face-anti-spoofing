@@ -4,9 +4,9 @@ towards the solving anti spoofing problem on RGB only data.
 This repository contains training and evaulation pipeline with different regularization methods for face anti-spoofing network. There are a few models available for training purposes, based on MobileNetv2 (MN2) and MobileNetv3 (MN3). Project supports natively three datasets: [CelebA Spoof](https://github.com/Davidzhangyuanhan/CelebA-Spoof), [LCC FASD](https://csit.am/2019/proceedings/PRIP/PRIP3.pdf), [CASIA-SURF CeFA](https://arxiv.org/pdf/2003.05136.pdf). Also you may want to train or validate on your data. Final model based on MN3 trained on CelebA Spoof dataset. Model has 3.83 time less parametrs and 28 time less GFlops than AENET from original paper, in the same time MN3 better generalise on cross domain. The code contains demo which you can launch in real time with your webcam or on provided video. Also, the code supports conversion to the ONNX format.
 | model name | dataset | AUC | EER% | APCER% | BPCER% | ACER% | MParam | GFlops | Link to snapshot |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| MN3_large |CelebA-Spoof| 0.998 | 2.26 | 0.69 | 6.92 | 3.8 | 0.13 | 2.93 | [snapshot]() |
+| MN3_large |CelebA-Spoof| 0.998 | 2.26 | 0.69 | 6.92 | 3.8 | 0.13 | 2.93 | [snapshot](https://drive.google.com/drive/u/0/folders/1A6wa3AlrdjyNPkXT81knIzXxR7SAYm1q) |
 | AENET | CelebA-Spoof | 0.999 | 1.12 | 0.23 | 6.27 | 3.25 | 3.64 | 11.22 | [link to repo](https://github.com/Davidzhangyuanhan/CelebA-Spoof) |
-| MN3_large | LCC_FASD | 0.921 | 16.13 | 17.26 | 15.4 | 16.33 | 0.13 | 2.93 | [snapshot]() |
+| MN3_large | LCC_FASD | 0.921 | 16.13 | 17.26 | 15.4 | 16.33 | 0.13 | 2.93 | [snapshot](https://drive.google.com/drive/u/0/folders/1A6wa3AlrdjyNPkXT81knIzXxR7SAYm1q) |
 | AENET | CLCC_FASD | 0.868 | 20.91 | 12.52 | 32.7 | 22.61 | 3.64 | 11.22 | [link to repo](https://github.com/Davidzhangyuanhan/CelebA-Spoof) |
 
 ## Setup
@@ -29,11 +29,11 @@ bash init_venv.sh
 For training or evaluating on CelebA Spoof dataset you need to download dataset (you can do it from their [official repository](https://github.com/Davidzhangyuanhan/CelebA-Spoof)) and then run following script being located in root folder of the project:
 ```bash
 cd /data_preparation/
-python3 prepare_celeba_json.py
+python prepare_celeba_json.py
 ```
 To train or evaluate on LCC FASD dataset you need to download it (link is available in their paper on [arxiv](https://csit.am/2019/proceedings/PRIP/PRIP3.pdf)). Then you need to get the OpenVINO™ face detector model (choose the one on the goole drive), activate OpenVINO™ enviroment and run following script:
 ```bash
-python3 prepare_LCC_FASD.py --fd_model <path to `.xml` face detector model> --root_dir <path to root dir of LCC_FASD>
+python prepare_LCC_FASD.py --fd_model <path to `.xml` face detector model> --root_dir <path to root dir of LCC_FASD>
 ```
 This script will cut faces tighter than it is in original dataset and get rid of some garbage crops. For running this script you need to activate OpenVINO™ environment. Refer to official documentation.
 
@@ -56,6 +56,7 @@ The script for training and inference uses a configuration file. This is default
 * **test_dataset** - this is indicator on which dataset you want to test. Options are the same as for dataset parameter
 * **external** - parameters for constructing external dataset reader. See Data Preparation section.
 * **scheduler** - scheduler for dropping learning rate
+* **model** - there are parameters concern model. `pretrained` means that you want to train with imagenet weights (you can download weights from google drive(https://drive.google.com/drive/u/0/folders/1A6wa3AlrdjyNPkXT81knIzXxR7SAYm1q) and specify the path to it in `imagenet weights` parameter.
 * **img_norm_cfg** - parameters for data normalization
 * **data.sampler** - if it is True, then will be generated weights for `WeightedRandomSampler` object to uniform distribution of two classes
 * **RSC** - representation self challenging, applied before global average pooling. p, b - quantile and probability applying it on image in current batch
@@ -74,34 +75,34 @@ The script for training and inference uses a configuration file. This is default
 ## Training
 To start training create config file based on the default one and run 'train.py':
 ```bash
-sudo python3 train.py --config <path to config>;
+python train.py --config <path to config>;
 ```
 For additional parameters you can refer to help adding '--help'. For example, you can specify on which GPU you want to train your model. If for some reasons you want to train on CPU, specify `--device` to 'cpu'. default device is cuda 0.
 
 ## Testing
 To test your model set 'test_dataset' in config file to one of preferable dataset (available params: 'celeba-spoof', 'LCC_FASD', 'Casia'). Then run script:
 ```bash
-sudo python3 eval_protocol.py --config <path to config>;
+python eval_protocol.py --config <path to config>;
 ```
 default device to do it is cuda 0.
 
 ## Convert a PyTorch Model to the OpenVINO™ Format
 To convert the obtained model, run the following command:
 ```bash
-sudo python3 convert_model.py --config <path to config>; --model_path <path to where save the model>;
+python convert_model.py --config <path to config>; --model_path <path to where save the model>;
 ```
 By default, the output model path is 'MobileNetv3.onnx'
 Now you obtain '.onnx' format. To obtain OpenVINO™ IR model you should refer to [official documentation](https://docs.openvinotoolkit.org/latest/openvino_docs_MO_DG_Deep_Learning_Model_Optimizer_DevGuide.html) for next steps. You do not need to add --mean, --scale, --inverse_input channels options.
 To check that there are no mistakes with the conversion you can launch `conversion_checker.py` by writing following command:
 ```bash
-sudo python3 conversion_checker.py --config <path to config>; --spf_model_torch <path to torch model> --spf_model_openvino <path to openvino model>;
+python conversion_checker.py --config <path to config>; --spf_model_torch <path to torch model> --spf_model_openvino <path to openvino model>;
 ```
 You will see mean difference (L1 metric distance) on the first and second predicted class. If it's 10e-6 or less than it's all good.
 ## Demo
-To start demo you need to download one of available OpenVINO™ face detector model. On [google drive]() you will see a trained antispoofing model that you can download and run, or choose your own trained model. Use OpenVINO™ format to obtain best perfomance speed, but pytorch format will work as well.
+To start demo you need to download one of available OpenVINO™ face detector model. On [google drive](https://drive.google.com/drive/u/0/folders/1A6wa3AlrdjyNPkXT81knIzXxR7SAYm1q) you will see a trained antispoofing model that you can download and run, or choose your own trained model. Use OpenVINO™ format to obtain best perfomance speed, but pytorch format will work as well.
 
 After preparation start demo by running:
 ```bash
-python3 demo/demo.py --fd_model /path_to_face_detecor.xml --spf_model /path_to_antispoofing_model.xml(.pth.tar) --cam_id 0 --config config.py;
+python demo/demo.py --fd_model /path_to_face_detecor.xml --spf_model /path_to_antispoofing_model.xml(.pth.tar) --cam_id 0 --config config.py;
 ```
 Refer to `--help` for additional parameters. If you are using pytorch model then you need to specify training config with `--config` option. To run demo on the video, you should change `--cam_id` on `--video` option and specify your_video.mp4
