@@ -192,7 +192,7 @@ def make_dataset(config: dict, train_transform: object = None, val_transform: ob
         assert mode == 'eval'
         return test_data
 
-def make_loader(train, val, config, sampler=None):
+def make_loader(train, val, test, config, sampler=None):
     ''' make data loader from given train and val dataset
     train, val -> train loader, val loader'''
     if sampler:
@@ -206,7 +206,12 @@ def make_loader(train, val, config, sampler=None):
     val_loader = DataLoader(dataset=val, batch_size=config.data.batch_size,
                                                 shuffle=True, pin_memory=config.data.pin_memory,
                                                 num_workers=config.data.data_loader_workers)
-    return train_loader, val_loader
+
+    test_loader = DataLoader(dataset=test, batch_size=config.data.batch_size,
+                                                shuffle=True, pin_memory=config.data.pin_memory,
+                                                num_workers=config.data.data_loader_workers)
+
+    return train_loader, val_loader, test_loader
 
 def build_model(config, device, strict=True, mode='train'):
     ''' build model and change layers depends on loss type'''
