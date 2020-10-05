@@ -17,7 +17,7 @@ class TestONNXExport(unittest.TestCase):
     def test_export(self):
         try:
             # input to inference model
-            dummy_input = torch.randn(1, 3, *(self.img_size), device='cpu')
+            dummy_input = torch.rand(size=(1, 3, *(self.img_size)), device='cpu')
             self.model.eval()
             torch.onnx.export(self.model, dummy_input, './mobilenetv3.onnx', verbose=False)
             check_file_exist('./mobilenetv3.onnx')
