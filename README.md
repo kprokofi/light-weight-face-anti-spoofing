@@ -105,7 +105,7 @@ Use the `mo_onnx.py` script from the <INSTALL_DIR>/deployment_tools/model_optimi
 ```bash
 python mo_onnx.py --input_model <INPUT_MODEL.onnx>
 ```
-To check that there are no mistakes with the conversion you can launch `conversion_checker.py` by writing following command:
+To check that there are no mistakes with the conversion you can launch `conversion_checker.py` by writing the following command:
 ```bash
 python conversion_checker.py --config <path to config>; --spf_model_torch <path to torch model> --spf_model_openvino <path to openvino model>;
 ```
