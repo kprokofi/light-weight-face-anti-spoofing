@@ -3,7 +3,7 @@ towards the solving anti spoofing problem on RGB only data.
 ## Introduction
 This repository contains training and evaulation pipeline with different regularization methods for face anti-spoofing network. There are a few models available for training purposes, based on MobileNetv2 (MN2) and MobileNetv3 (MN3). Project supports natively three datasets: [CelebA Spoof](https://github.com/Davidzhangyuanhan/CelebA-Spoof), [LCC FASD](https://csit.am/2019/proceedings/PRIP/PRIP3.pdf), [CASIA-SURF CeFA](https://arxiv.org/pdf/2003.05136.pdf). Also you may want to train or validate on your data. Final model based on MN3 trained on CelebA Spoof dataset. Model has 3.83 time less parametrs and 28 time less GFlops than AENET from original paper, in the same time MN3 better generalise on cross domain. The code contains demo which you can launch in real time with your webcam or on provided video. Also, the code supports conversion to the ONNX format.
 | model name | dataset | AUC | EER% | APCER% | BPCER% | ACER% | MParam | GFlops | Link to snapshot |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | MN3_large |CelebA-Spoof| 0.998 | 2.26 | 0.69 | 6.92 | 3.8 | 0.13 | 2.93 | [snapshot](https://drive.google.com/drive/u/0/folders/1A6wa3AlrdjyNPkXT81knIzXxR7SAYm1q) |
 | AENET | CelebA-Spoof | 0.999 | 1.12 | 0.23 | 6.27 | 3.25 | 3.64 | 11.22 | [link to repo](https://github.com/Davidzhangyuanhan/CelebA-Spoof) |
 | MN3_large | LCC_FASD | 0.921 | 16.13 | 17.26 | 15.4 | 16.33 | 0.13 | 2.93 | [snapshot](https://drive.google.com/drive/u/0/folders/1A6wa3AlrdjyNPkXT81knIzXxR7SAYm1q) |
@@ -14,6 +14,7 @@ This repository contains training and evaulation pipeline with different regular
 
 * Python 3.6.9
 * OpenVINO™ 2020 R3 (or newer) with Python API
+
 ### Installation
 
 1. Create virtual environment:
@@ -53,22 +54,25 @@ Now you are ready to launch training process!
 ### Configuration file
 The script for training and inference uses a configuration file. This is default [configuration file](./configs/config.py). You need to specify paths to datasets. Training pipeline supports following methods, which you can switch on and tune hyperparams while training:
 * **dataset** - this is indicator which dataset you will be using during training. Available options are 'celeba-spoof', 'LCC_FASD', 'Casia', 'multi_dataset', 'external'
+* **multi_task_learning** - specify whether or not to train with multitask loss. **It is avaliable for CelebA-Spoof dataset only!**
+* **evaulation** - it is flag to perform the assessment at the end of training and write metrics to a file
 * **test_dataset** - this is indicator on which dataset you want to test. Options are the same as for dataset parameter
 * **external** - parameters for constructing external dataset reader. See Data Preparation section.
-* **scheduler** - scheduler for dropping learning rate
-* **model** - there are parameters concern model. `pretrained` means that you want to train with imagenet weights (you can download weights from google drive(https://drive.google.com/drive/u/0/folders/1A6wa3AlrdjyNPkXT81knIzXxR7SAYm1q) and specify the path to it in `imagenet weights` parameter.
 * **img_norm_cfg** - parameters for data normalization
+* **scheduler** - scheduler for dropping learning rate
 * **data.sampler** - if it is True, then will be generated weights for `WeightedRandomSampler` object to uniform distribution of two classes
-* **RSC** - representation self challenging, applied before global average pooling. p, b - quantile and probability applying it on image in current batch
-* **aug** - advanced augmentation, appropriate value for type is 'cutmix' or 'mixup. lambda = BetaDistribution(alpha, beta), cutmix_prob - probability of applying cutmix on image.
+* **resize** - resize of the image
+* **checkpoint** - name of the checkpoint to save and path to experiment folder where checkpoint, tensorboard logs and eval metrics will be keeped
 * **loss** - there are available two possible losses: 'amsoftmax' with 'cos','arcos','cross_enropy' margins and 'soft_triple' with different number of inner classes. For more details about this soft triple loss see in [paper](https://arxiv.org/pdf/1909.05235.pdf)
 * **loss.amsoftmax.ratio** - there are availablity to use different m for different classes. Ratio is weights on which provided `m` will be devided for specific class. For example ratio = [1,2] means that m for the first class will equal to m, but for the second will equal to m/2
 * **loss.amsoftmax.gamma** - if this constant differs from 0 then focal loss will be switched on with the correspodnig gamma
 * **For soft triple loss**: `Cn` - number of classes, `K` - number of proxies for each class, `tau` - parameter for regularisation number of proxies
+* **model** - there are parameters concern model. `pretrained` means that you want to train with imagenet weights (you can download weights from google drive(https://drive.google.com/drive/u/0/folders/1A6wa3AlrdjyNPkXT81knIzXxR7SAYm1q) and specify the path to it in `imagenet weights` parameter. **model_type** - type of the model, 'Mobilenet3' and 'Mobilenet2' are available. **size** param means the size of the mobilenetv3, there are 'large' and 'small' options. Note that this will change mobilenev3 only. **embeding_dim** - the size of the embeding (vector of features after average pooling)
+* **aug** - advanced augmentation, appropriate value for type is 'cutmix' or 'mixup. lambda = BetaDistribution(alpha, beta), cutmix_prob - probability of applying cutmix on image.
 * **curves** - you can specify name of the curves, then set option '--draw_graph' to True when evaulate with eval_protocol.py script
-* **dropout** - 'bernoulli' and 'gaussian' dropout available
+* **dropout** - 'bernoulli' and 'gaussian' dropout available with respective parameters
 * **data_parallel** - you can train your network on several GPU
-* **multi_task**_learning - specify whether or not to train with multitask loss
+* **RSC** - representation self challenging, applied before global average pooling. p, b - quantile and probability applying it on image in current batch
 * **conv_cd** - this is option to switch on central difference convolutions instead of vanilla one changing value of theta from 0
 * **test_steps** - if you set this parameter for some int number, the algorithm will execute that many iterations for one epoch and stop. This will help you to test all processes (train,val,test)
 
@@ -98,6 +102,7 @@ To check that there are no mistakes with the conversion you can launch `conversi
 python conversion_checker.py --config <path to config>; --spf_model_torch <path to torch model> --spf_model_openvino <path to openvino model>;
 ```
 You will see mean difference (L1 metric distance) on the first and second predicted class. If it's 10e-6 or less than it's all good.
+
 ## Demo
 To start demo you need to download one of available OpenVINO™ face detector model. On [google drive](https://drive.google.com/drive/u/0/folders/1A6wa3AlrdjyNPkXT81knIzXxR7SAYm1q) you will see a trained antispoofing model that you can download and run, or choose your own trained model. Use OpenVINO™ format to obtain best perfomance speed, but pytorch format will work as well.
 
