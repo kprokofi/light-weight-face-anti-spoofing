@@ -1,7 +1,7 @@
 # Lightweight Face Anti Spoofing
-towards the solving anti-spoofing problem on RGB only data.
+Towards the solving anti-spoofing problem on RGB only data.
 ## Introduction
-This repository contains a training and evaluation pipeline with different regularization methods for face anti-spoofing network. There are a few models available for training purposes, based on MobileNetv2 (MN2) and MobileNetv3 (MN3). Project supports natively three datasets: [CelebA Spoof](https://github.com/Davidzhangyuanhan/CelebA-Spoof), [LCC FASD](https://csit.am/2019/proceedings/PRIP/PRIP3.pdf), [CASIA-SURF CeFA](https://arxiv.org/pdf/2003.05136.pdf). Also, you may want to train or validate with your own data. Final model based on MN3 trained on the CelebA Spoof dataset. The model has 3.83 times fewer parameters and 28 times fewer GFlops than AENET from the original paper, at the same time MN3 better generalizes on cross-domain. The code contains a demo that you can launch in real-time with your webcam or on the provided video. You can check out the short video how it works on the [goole drive](https://drive.google.com/drive/u/0/folders/1A6wa3AlrdjyNPkXT81knIzXxR7SAYm1q). Also, the code supports conversion to the ONNX format.
+This repository contains a training and evaluation pipeline with different regularization methods for face anti-spoofing network. There are a few models available for training purposes, based on MobileNetv2 (MN2) and MobileNetv3 (MN3). Project supports natively three datasets: [CelebA Spoof](https://github.com/Davidzhangyuanhan/CelebA-Spoof), [LCC FASD](https://csit.am/2019/proceedings/PRIP/PRIP3.pdf), [CASIA-SURF CeFA](https://arxiv.org/pdf/2003.05136.pdf). Also, you may want to train or validate with your own data. Final model based on MN3 trained on the CelebA Spoof dataset. The model has 3.83 times fewer parameters and 28 times fewer GFlops than AENET from the original paper, at the same time MN3 better generalizes on cross-domain. The code contains a demo that you can launch in real-time with your webcam or on the provided video. You can check out the short video on how it works on the [goole drive](https://drive.google.com/drive/u/0/folders/1A6wa3AlrdjyNPkXT81knIzXxR7SAYm1q). Also, the code supports conversion to the ONNX format.
 | model name | dataset | AUC | EER% | APCER% | BPCER% | ACER% | MParam | GFlops | Link to snapshot |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | MN3_large |CelebA-Spoof| 0.998 | 2.26 | 0.69 | 6.92 | 3.8 | 0.13 | 2.93 | [snapshot](https://drive.google.com/drive/u/0/folders/1A6wa3AlrdjyNPkXT81knIzXxR7SAYm1q) |
@@ -27,21 +27,21 @@ bash init_venv.sh
 . venv/bin/activate
 ```
 ### Data Preparation
-For training or evaluating on CelebA Spoof dataset you need to download the dataset (you can do it from the [official repository](https://github.com/Davidzhangyuanhan/CelebA-Spoof)) and then run the following script being located in the root folder of the project:
+For training or evaluating on the CelebA Spoof dataset you need to download the dataset (you can do it from the [official repository](https://github.com/Davidzhangyuanhan/CelebA-Spoof)) and then run the following script being located in the root folder of the project:
 ```bash
 cd /data_preparation/
 python prepare_celeba_json.py
 ```
-To train or evaluate on LCC FASD dataset you need to download it (link is available in the [original paper](https://csit.am/2019/proceedings/PRIP/PRIP3.pdf)). Then you need to get the OpenVINO™ face detector model. You can use [model downloader](https://docs.openvinotoolkit.org/latest/omz_tools_downloader_README.html) to do that. The name of the model that you are looking for is `face-detection-0100.xml`, activate OpenVINO™ environment, and run the following script:
+To train on or evaluate the LCC FASD dataset you need to download it (link is available in the [original paper](https://csit.am/2019/proceedings/PRIP/PRIP3.pdf)). Then you need to get the OpenVINO™ face detector model. You can use [model downloader](https://docs.openvinotoolkit.org/latest/omz_tools_downloader_README.html) to do that. The name of the model that you are looking for is `face-detection-0100.xml`, activate OpenVINO™ environment, and run the following script:
 ```bash
 python prepare_LCC_FASD.py --fd_model <path to `.xml` face detector model> --root_dir <path to root dir of LCC_FASD>
 ```
 This script will cut faces tighter than it is in the original dataset and get rid of some garbage crops. For running this script you need to activate OpenVINO™ environment. Refer to the official documentation.
 
-You can use LCC FASD without doing this at all, but it seems to enhance performance, so I recommend doing this.
+You can use the LCC FASD without doing this at all, but it seems to enhance performance, so I recommend doing this.
 Note that the new folder will be created and named as `<old name>cropped`. So to train or test the model with cropped data, please, set path to that new folder, which will be located in the same directory as the script.
 
-To train or evaluate on CASIA CEFA you just need to download it. The reader for this dataset supports not only RGB modality but the depth and IR too. Nevertheless, it's not the purpose of this project.
+To train on or evaluate the CASIA CEFA you just need to download it. The reader for this dataset supports not only RGB modality but the depth and IR too. Nevertheless, it's not the purpose of this project.
 
 If you want to use your own data, the next steps should be done:
 1) Prepare the reader for your dataset.
@@ -67,7 +67,7 @@ The script for training and inference uses a configuration file. This is [defaul
 * **loss.amsoftmax.ratio**a  - there is availability to use different m for different classes. The ratio is the weights on which provided `m` will be divided for a specific class. For example ratio = [1,2] means that m for the first class will equal to m, but for the second will equal to m/2
 * **loss.amsoftmax.gamma** - if this constant differs from 0 then the focal loss will be switched on with the corresponding gamma
 * **For soft triple loss**: `Cn` - number of classes, `K` - number of proxies for each class, `tau` - parameter for regularisation number of proxies
-* **model** - there are parameters concern model. `pretrained` means that you want to train with the imagenet weights (you can download weights from [google drive](https://drive.google.com/drive/u/0/folders/1A6wa3AlrdjyNPkXT81knIzXxR7SAYm1q) and specify the path to it in the `imagenet weights` parameter. **model_type** - type of the model, 'Mobilenet3' and 'Mobilenet2' are available. **size** param means the size of the mobilenetv3, there are 'large' and 'small' options. Note that this will change mobilenev3 only. **embeding_dim** - the size of the embeding (vector of features after average pooling)
+* **model** - there are parameters concern model. `pretrained` means that you want to train with the imagenet weights (you can download weights from [google drive](https://drive.google.com/drive/u/0/folders/1A6wa3AlrdjyNPkXT81knIzXxR7SAYm1q) and specify the path to it in the `imagenet weights` parameter. **model_type** - type of the model, 'Mobilenet3' and 'Mobilenet2' are available. **size** param means the size of the mobilenetv3, there are 'large' and 'small' options. Note that this will change mobilenev3 only. **embeding_dim** - the size of the embeding (vector of features after average pooling). **width_mult** - the width scaling parameter of the model. Note, that you will need the appropriate imagenet weights if you want to train your model with transfer learning. On google drive weights with 0.75, 1.0 value of this parameter is available
 * **aug** - advanced augmentation, appropriate value for type is 'cutmix' or 'mixup. lambda = BetaDistribution(alpha, beta), cutmix_prob - probability of applying cutmix on image.
 * **curves** - you can specify the name of the curves, then set option `--draw_graph` to `True` when evaluating with eval_protocol.py script
 * **dropout** - `bernoulli` and `gaussian` dropouts are available with respective parameters
