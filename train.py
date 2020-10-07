@@ -1,218 +1,154 @@
+'''MIT License
+
+Copyright (C) 2020 Prokofiev Kirill
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom
+the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+OR OTHER DEALINGS IN THE SOFTWARE.'''
+
 import argparse
+
+import albumentations as A
+import cv2 as cv
 import torch
 import torch.nn as nn
-import torch.optim as optim
-import torch.utils.data
-import torchvision.transforms as transforms
-import torchvision.datasets as datasets
-from torch.utils.tensorboard import SummaryWriter
-import time
-import torch.nn.functional as F
-from torch.utils.data import DataLoader
-import MobilNet2
-from amsoftmax import AMSoftmaxLoss, AngleSimpleLinear
-from reader_dataset import LCFAD
-from torch.autograd import Variable
-import numpy as np
-import cv2 as cv
-import albumentations as A
-from tqdm import tqdm
 
-# parse arguments
-parser = argparse.ArgumentParser(description='antispoofing training')
-parser.add_argument('-b', '--batch-size', default=128, type=int, help='mini-batch size (default: 128)')
-parser.add_argument('--epochs', default=200, type=int, help='number of total epochs to run')
-parser.add_argument('--start-epoch', default=0, type=int, help='manual epoch number (useful on restarts)')
-parser.add_argument('--wd', '--weight-decay', default=1e-4, type=float, help='weight decay (default: 1e-4)')
-parser.add_argument('-j', '--workers', default=4, type=int, help='number of data loading workers (default: 4)')
-parser.add_argument('--cuda', type=bool, default=True, help='use cpu')
-parser.add_argument('--GPU', type=int, default=0, help='specify which gpu to use')
-parser.add_argument('--print-freq', '-p', default=20, type=int, help='print frequency (default: 20)')
-parser.add_argument('--lr', '--learning-rate', default=0.05, type=float, help='initial learning rate')
-parser.add_argument('--adjust_lr', type=list, default=[100, 150], help='spicify range of dropping lr')
-parser.add_argument('--momentum', default=0.9, type=float, help='momentum')
-parser.add_argument('--gamma', default=0.1, type=float, help='specify koefficient of lr dropping')
-parser.add_argument('--save_checkpoint', type=bool, default=False, help='whether or not to save your model')
-parser.add_argument('--loss', default='cross_entropy', type=str, help='which loss to use')
-parser.add_argument('--classes', default=2, type=int, help='number of classes')
+from trainer import Trainer
+from utils import (Transform, build_criterion, build_model, make_dataset,
+                   make_loader, make_weights, read_py_config)
 
-#global variables
-WRITER = SummaryWriter(f'/home/prokofiev/pytorch/antispoofing/log_tensorboard/MobileNet_LCFAD_1')
-STEP = 0
-BEST_ACCURACY = 0
 
 def main():
-    global args, BEST_ACCURACY
-
-    # argements parsing
+    # parse arguments
+    parser = argparse.ArgumentParser(description='antispoofing training')
+    parser.add_argument('--GPU', type=int, default=0, help='specify which gpu to use')
+    parser.add_argument('--save_checkpoint', type=bool, default=True,
+                        help='whether or not to save your model')
+    parser.add_argument('--config', type=str, default=None, required=True,
+                        help='Configuration file')
+    parser.add_argument('--device', type=str, default='cuda', choices=['cuda','cpu'],
+                        help='if you want to train model on cpu, pass "cpu" param')
     args = parser.parse_args()
-    
-    # loading data
-    normalize = A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-    train_transform = A.Compose([
-                            # cv.cvtColor(code=cv.COLOR_BGR2RGB),
-                            A.Resize(224, 224),
-                            A.RandomCrop(224,224),
+
+    # manage device, arguments, reading config
+    path_to_config = args.config
+    config = read_py_config(path_to_config)
+    device = args.device + f':{args.GPU}' if args.device == 'cuda' else 'cpu'
+    if config.data_parallel.use_parallel:
+        device = f'cuda:{config.data_parallel.parallel_params.output_device}'
+    if config.multi_task_learning and config.dataset != 'celeba_spoof':
+        raise NotImplementedError(
+            'Note, that multi task learning is avaliable for celeba_spoof only. '
+            'Please, switch it off in config file'
+            )
+    # launch training, validation, testing
+    train(config, device, args.save_checkpoint)
+
+def train(config, device='cuda:0', save_chkpt=True):
+    ''' procedure launching all main functions of training,
+        validation and testing pipelines'''
+    # for pipeline testing purposes
+    save_chkpt = False if config.test_steps else True
+    # preprocessing data
+    normalize = A.Normalize(**config.img_norm_cfg)
+    train_transform_real = A.Compose([
+                            A.Resize(**config.resize, interpolation=cv.INTER_CUBIC),
                             A.HorizontalFlip(p=0.5),
-                            A.Rotate(limit=(-90, 90), p=0.5),
-                            A.augmentations.transforms.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, brightness_by_max=True, always_apply=False, p=0.5),
-                            normalize,
-                            # A.pytorch.transforms.ToTensor()
+                            A.augmentations.transforms.ISONoise(color_shift=(0.15,0.35),
+                                                                intensity=(0.2, 0.5), p=0.2),
+                            A.augmentations.transforms.RandomBrightnessContrast(brightness_limit=0.2,
+                                                                                contrast_limit=0.2,
+                                                                                brightness_by_max=True,
+                                                                                always_apply=False, p=0.3),
+                            A.augmentations.transforms.MotionBlur(blur_limit=5, p=0.2),
+                            normalize
                             ])
-
+    train_transform_spoof = A.Compose([
+                            A.Resize(**config.resize, interpolation=cv.INTER_CUBIC),
+                            A.HorizontalFlip(p=0.5),
+                            A.augmentations.transforms.ISONoise(color_shift=(0.15,0.35),
+                                                                intensity=(0.2, 0.5), p=0.2),
+                            A.augmentations.transforms.RandomBrightnessContrast(brightness_limit=0.2,
+                                                                                contrast_limit=0.2,
+                                                                                brightness_by_max=True,
+                                                                                always_apply=False, p=0.3),
+                            A.augmentations.transforms.MotionBlur(blur_limit=5, p=0.2),
+                            normalize
+                            ])
     val_transform = A.Compose([
-                # cv.cvtColor(image, cv.COLOR_BGR2RGB),
-                A.Resize(224, 224),
-                normalize,
-                # A.pytorch.transforms.ToTensor()
-                ])     
+                A.Resize(**config.resize, interpolation=cv.INTER_CUBIC),
+                normalize
+                ])
 
-    train_dataset = LCFAD(root_dir='/home/prokofiev/pytorch/LCC_FASD', train=True, transform=train_transform)
-    val_dataset = LCFAD(root_dir='/home/prokofiev/pytorch/LCC_FASD', train=False, transform=val_transform)
-    train_loader = DataLoader(dataset=train_dataset, batch_size=args.batch_size, shuffle=True, pin_memory=True)
-    val_loader = DataLoader(dataset=val_dataset, batch_size=args.batch_size, shuffle=True, pin_memory=True)
+    # load data
+    sampler = config.data.sampler
+    if sampler:
+        num_instances, weights = make_weights(config)
+        sampler = torch.utils.data.WeightedRandomSampler(weights, num_instances, replacement=True)
+    train_transform = Transform(train_spoof=train_transform_spoof,
+                                train_real=train_transform_real, val=None)
+    val_transform = Transform(train_spoof=None, train_real=None, val=val_transform)
+    train_dataset, val_dataset, test_dataset = make_dataset(config, train_transform, val_transform)
+    train_loader, val_loader, test_loader = make_loader(train_dataset, val_dataset,
+                                                        test_dataset, config, sampler=sampler)
 
-    # model
-    if args.loss == 'amsoftmax':
-        model = MobilNet2.MobileNetV2(use_amsoftmax=True)
-    else:
-        assert args.loss == 'cross_entropy'
-        model = MobilNet2.MobileNetV2()
-    
-    #criterion
-    if args.loss == 'cross_entropy':
-        criterion = nn.CrossEntropyLoss()
-    else:
-        criterion = AMSoftmaxLoss(m=0.5, margin_type='cos', s=5)
-    
-    optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.wd)
-    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=args.adjust_lr, gamma=args.gamma)
+    # build model and put it to cuda and if it needed then wrap model to data parallel
+    model = build_model(config, device=device, strict=False, mode='train')
+    model.to(device)
+    if config.data_parallel.use_parallel:
+        model = torch.nn.DataParallel(model, **config.data_parallel.parallel_params)
+
+    # build a criterion
+    softmax = build_criterion(config, device, task='main').to(device)
+    cross_entropy = build_criterion(config, device, task='rest').to(device)
+    bce = nn.BCELoss().to(device)
+    criterion = (softmax, cross_entropy, bce) if config.multi_task_learning else softmax
+
+    # build optimizer and scheduler for it
+    optimizer = torch.optim.SGD(model.parameters(), **config.optimizer)
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, **config.scheduler)
+
+    # create Trainer object and get experiment information
+    trainer = Trainer(model, criterion, optimizer, device, config, train_loader, val_loader, test_loader)
+    trainer.get_exp_info()
 
     # learning epochs
-    for epoch in range(args.start_epoch, args.epochs):
-        if epoch != args.start_epoch:
+    for epoch in range(config.epochs.start_epoch, config.epochs.max_epoch):
+        if epoch != config.epochs.start_epoch:
             scheduler.step()
 
-        # train for one epoch
-        train(train_loader, model, criterion, optimizer, epoch)
+        # train model for one epoch
+        train_loss, train_accuracy = trainer.train(epoch)
+        print(f'epoch: {epoch}  train loss: {train_loss}   train accuracy: {train_accuracy}')
 
-        # evaluate on validation set
-        accuracy = validate(val_loader, model, criterion)
+        # validate your model
+        accuracy = trainer.validate()
 
-        # remember best accuracy and save checkpoint
-        BEST_ACCURACY = max(accuracy, BEST_ACCURACY)
-        print(f'best accuracy:  {BEST_ACCURACY}')
-        if accuracy == BEST_ACCURACY and args.save_checkpoint:
-            checkpoint = {'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict()}
-            save_checkpoint(checkpoint, 'my_best_modelMobileNet2.pth.tar')
+        # eval metrics such as AUC, APCER, BPCER, ACER on val and test dataset according to rule
+        trainer.eval(epoch, accuracy, save_chkpt=save_chkpt)
+        # for testing purposes
+        if config.test_steps:
+            exit()
 
-def train(train_loader, model, criterion, optimizer, epoch):
-    global STEP, args
-    # meters
-    batch_time = AverageMeter()
-    data_time = AverageMeter()
-    losses = AverageMeter()
-    accuracy = AverageMeter()
+    # evaluate in the end of training
+    if config.evaluation:
+        file_name = 'tests.txt'
+        trainer.test(file_name=file_name)
 
-    # model to cuda, criterion to cuda
-    model.cuda(device=args.GPU)
-    criterion.cuda(device=args.GPU)
-
-    # switch to train mode and train one epoch
-    model.train()
-    loop = tqdm(enumerate(train_loader), total=len(train_loader))
-    for i, (input, target) in loop:
-        if args.cuda:
-            input = input.cuda(device=args.GPU)
-            target = target.cuda(device=args.GPU)
-
-        # compute output and loss
-        output = model(input)
-        print(output.shape, target.shape)
-        loss = criterion(output, target)
-
-        # compute gradient and do SGD step
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-
-        # measure accuracy and record loss
-        acc = precision(output.data, target)
-        losses.update(loss.item(), input.size(0))
-        accuracy.update(acc, input.size(0))
-
-        # write to writer for tensorboard
-        WRITER.add_scalar('Train/loss', loss, global_step=STEP)
-        WRITER.add_scalar('Train/accuracy',  acc, global_step=STEP)
-        STEP += 1
-
-        # update progress bar
-        loop.set_description(f'Epoch [{epoch}/{args.epochs}]')
-        if i % args.print_freq == 0:
-            loop.set_postfix(loss=loss.item(), avr_loss = losses.avg, acc=acc, avr_acc=accuracy.avg)
-
-def validate(val_loader, model, criterion):
-    # meters
-    batch_time = AverageMeter()
-    losses = AverageMeter()
-    accuracy = AverageMeter()
-
-    # switch to evaluation mode and inference the model
-    loop = tqdm(enumerate(val_loader), total=len(val_loader))
-    for i, (input, target) in loop:
-        if args.cuda:
-            input = input.cuda(device=args.GPU)
-            target = target.cuda(device=args.GPU)
-
-        # computing output and loss
-        with torch.no_grad():
-            output = model(input)
-            loss = criterion(output, target)
-        
-        # measure accuracy and record loss
-        acc = precision(output.data, target)
-        losses.update(loss.item(), input.size(0))
-        accuracy.update(acc, input.size(0))
-
-        # update progress bar
-        if i % args.print_freq == 0:
-            loop.set_postfix(loss=loss.item(), avr_loss = losses.avg, acc=acc, avr_acc=accuracy.avg)
-
-    print(f'val accuracy on epoch: {round(accuracy.avg,3)}')
-
-    return accuracy.avg
-
-class AverageMeter(object):
-    """Computes and stores the average and current value"""
-    def __init__(self):
-        self.reset()
-
-    def reset(self):
-        self.val = 0
-        self.avg = 0
-        self.sum = 0
-        self.count = 0
-
-    def update(self, val, n=1):
-        self.val = val
-        self.sum += val * n
-        self.count += n
-        self.avg = self.sum / self.count
-
-def save_checkpoint(state, filename="my_model.pth.tar"):
-    print('==> saving checkpoint')
-    torch.save(state, filename)
-
-def load_checkpoint(checkpoint, net, optimizer, load_optimizer=False):
-    print("==> Loading checkpoint")
-    net.load_state_dict(checkpoint['state_dict'])
-    if load_optimizer:
-        optimizer.load_state_dict(checkpoint['optimizer'])
-
-def precision(output, target):
-    """Computes the precision"""
-    accuracy = (output.argmax(dim=1) == target).float().mean().item()
-    return accuracy*100
 
 if __name__=='__main__':
     main()
