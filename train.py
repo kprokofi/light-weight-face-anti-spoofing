@@ -21,7 +21,6 @@ ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
 OR OTHER DEALINGS IN THE SOFTWARE.'''
 
 import argparse
-import os.path as osp
 
 import albumentations as A
 import cv2 as cv
@@ -30,7 +29,7 @@ import torch.nn as nn
 
 from trainer import Trainer
 from utils import (Transform, build_criterion, build_model, make_dataset,
-                   make_loader, make_weights, read_py_config, check_file_exist)
+                   make_loader, make_weights, read_py_config)
 
 
 def main():
@@ -147,7 +146,7 @@ def train(config, device='cuda:0', save_chkpt=True):
 
     # evaulate in the end of training
     if config.evaulation:
-        file_name = f'tests.txt'
+        file_name = 'tests.txt'
         trainer.test(file_name=file_name)
 
 

@@ -33,7 +33,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 import utils
-from demo_tools import load_ie_model,TorchCNN, VectorCNN
+from demo_tools import TorchCNN, VectorCNN
+
 
 def main():
     """Prepares data for the accuracy convertation checker"""
@@ -51,7 +52,7 @@ def main():
     assert args.spf_model_openvino.endswith('.xml') and args.spf_model_torch.endswith('.pth.tar')
     spoof_model_torch = utils.build_model(config, args.device.lower(), strict=True, mode='eval')
     spoof_model_torch = TorchCNN(spoof_model_torch, args.spf_model_torch, config, device=args.device.lower())
-    spoof_model_openvino = VectorCNN(args.spf_model_openvino, config)
+    spoof_model_openvino = VectorCNN(args.spf_model_openvino)
     # running checker
     avg_diff = run(spoof_model_torch, spoof_model_openvino)
     print((f'mean difference on the first predicted class : {avg_diff[0]}\n'
