@@ -28,110 +28,12 @@ import sys
 import cv2 as cv
 import glog as log
 import numpy as np
-import torch
-import torch.nn as nn
 
-from .ie_tools import load_ie_model
 current_dir = osp.dirname(osp.abspath(inspect.getfile(inspect.currentframe())))
 parent_dir = osp.dirname(current_dir)
 sys.path.insert(0, parent_dir)
 import utils
-
-
-class FaceDetector:
-    """Wrapper class for face detector"""
-    def __init__(self, model_path, conf=.6, device='CPU', ext_path=''):
-        self.net = load_ie_model(model_path, device, None, ext_path)
-        self.confidence = conf
-        self.expand_ratio = (1.1, 1.05)
-
-    def get_detections(self, frame):
-        """Returns all detections on frame"""
-        _, _, h, w = self.net.get_input_shape().shape
-        out = self.net.forward(cv.resize(frame, (w, h)))
-        detections = self.__decode_detections(out, frame.shape)
-        return detections
-
-    def __decode_detections(self, out, frame_shape):
-        """Decodes raw SSD output"""
-        detections = []
-
-        for detection in out[0, 0]:
-            confidence = detection[2]
-            if confidence > self.confidence:
-                left = int(max(detection[3], 0) * frame_shape[1])
-                top = int(max(detection[4], 0) * frame_shape[0])
-                right = int(max(detection[5], 0) * frame_shape[1])
-                bottom = int(max(detection[6], 0) * frame_shape[0])
-                if self.expand_ratio != (1., 1.):
-                    w = (right - left)
-                    h = (bottom - top)
-                    dw = w * (self.expand_ratio[0] - 1.) / 2
-                    dh = h * (self.expand_ratio[1] - 1.) / 2
-                    left = max(int(left - dw), 0)
-                    right = int(right + dw)
-                    top = max(int(top - dh), 0)
-                    bottom = int(bottom + dh)
-
-                detections.append(((left, top, right, bottom), confidence))
-
-        if len(detections) > 1:
-            detections.sort(key=lambda x: x[1], reverse=True)
-        return detections
-
-class VectorCNN:
-    """Wrapper class for a nework returning a vector"""
-    def __init__(self, model_path, config, device='CPU'):
-        self.net = load_ie_model(model_path, device, None)
-        self.config = config
-
-    def forward(self, batch):
-        """Performs forward of the underlying network on a given batch"""
-        _, _, h, w = self.net.get_input_shape().shape
-        outputs = []
-        mean = np.array(object=self.config.img_norm_cfg.mean).reshape((1,1,3))
-        std = np.array(object=self.config.img_norm_cfg.std).reshape((1,1,3))
-        for img in batch:
-            img = cv.resize(img, (h, w) , interpolation=cv.INTER_CUBIC)
-            img = cv.cvtColor(img, cv.COLOR_BGR2RGB)
-            img = img/255
-            img = (img - mean)/std
-            outputs.append(self.net.forward(img))
-        return outputs
-
-class TorchCNN:
-    '''Wrapper for torch model'''
-    def __init__(self, model, checkpoint_path, config, device='cpu'):
-        self.model = model
-        if config.data_parallel.use_parallel:
-            self.model = nn.DataParallel(self.model, **config.data_parallel.parallel_params)
-        utils.load_checkpoint(checkpoint_path, self.model, map_location=device, strict=True)
-        self.config = config
-
-    def preprocessing(self, images):
-        ''' making image preprocessing for pytorch pipeline '''
-        mean = np.array(object=self.config.img_norm_cfg.mean).reshape((3,1,1))
-        std = np.array(object=self.config.img_norm_cfg.std).reshape((3,1,1))
-        height, width = list(self.config.resize.values())
-        preprocessed_imges = []
-        for img in images:
-            img = cv.resize(img, (height, width) , interpolation=cv.INTER_CUBIC)
-            img = cv.cvtColor(img, cv.COLOR_BGR2RGB)
-            img = np.transpose(img, (2, 0, 1)).astype(np.float32)
-            img = img/255
-            img = (img - mean)/std
-            preprocessed_imges.append(img)
-        return torch.tensor(preprocessed_imges, dtype=torch.float32)
-
-    def forward(self, batch):
-        batch = self.preprocessing(batch)
-        self.model.eval()
-        model1 = (self.model.module
-                  if self.config.data_parallel.use_parallel
-                  else self.model)
-        with torch.no_grad():
-            output = model1.forward_to_onnx(batch)
-            return output.detach().numpy()
+from demo_tools import TorchCNN, VectorCNN, FaceDetector
 
 def pred_spoof(frame, detections, spoof_model):
     """Get prediction for all detected faces on the frame"""
@@ -191,7 +93,7 @@ def main():
     parser = argparse.ArgumentParser(description='antispoofing recognition live demo script')
     parser.add_argument('--video', type=str, default=None, help='Input video')
     parser.add_argument('--cam_id', type=int, default=-1, help='Input cam')
-    parser.add_argument('--config', type=str, default=None, required=True,
+    parser.add_argument('--config', type=str, default=None, required=False,
                         help='Configuration file')
     parser.add_argument('--fd_model', type=str, required=True)
     parser.add_argument('--fd_thresh', type=float, default=0.6, help='Threshold for FD')
@@ -209,7 +111,6 @@ def main():
     args = parser.parse_args()
     device = args.device + f':{args.GPU}' if args.device == 'cuda' else 'cpu'
     write_video = args.write_video
-    config = utils.read_py_config(args.config)
 
     if args.cam_id >= 0:
         log.info('Reading from cam {}'.format(args.cam_id))
@@ -225,11 +126,14 @@ def main():
     assert cap.isOpened()
     face_detector = FaceDetector(args.fd_model, args.fd_thresh, args.device, args.cpu_extension)
     if args.spf_model.endswith('pth.tar'):
+        if not args.config:
+            raise ValueError('You should pass config file to work with a Pytorch model')
+        config = utils.read_py_config(args.config)
         spoof_model = utils.build_model(config, args, strict=True, mode='eval')
         spoof_model = TorchCNN(spoof_model, args.spf_model, config, device=device)
     else:
         assert args.spf_model.endswith('.xml')
-        spoof_model = VectorCNN(args.spf_model, config)
+        spoof_model = VectorCNN(args.spf_model)
     # running demo
     run(args, cap, face_detector, spoof_model, write_video)
 

@@ -51,12 +51,17 @@ def main():
     device = args.device + f':{args.GPU}' if args.device == 'cuda' else 'cpu'
     if config.data_parallel.use_parallel:
         device = f'cuda:{config.data_parallel.parallel_params.output_device}'
-
+    if config.multi_task_learning and config.dataset != 'celeba_spoof':
+        raise NotImplementedError(
+            'Note, that multi task learning is avaliable for celeba_spoof only. '
+            'Please, switch it off in config file'
+            )
     # launch training, validation, testing
     train(config, device, args.save_checkpoint)
 
 def train(config, device='cuda:0', save_chkpt=True):
-    ''' procedure launching all main functions of training, validation and testing pipelines'''
+    ''' procedure launching all main functions of training,
+        validation and testing pipelines'''
     # for pipeline testing purposes
     save_chkpt = False if config.test_steps else True
     # preprocessing data
