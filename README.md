@@ -110,7 +110,7 @@ To check that there are no mistakes with the conversion you can launch `conversi
 ```bash
 python conversion_checker.py --config <path to config>; --spf_model_torch <path to torch model> --spf_model_openvino <path to OpenVINO model>;
 ```
-You will see the mean difference (L1 metric distance) on the first and second predicted class. If it's 10e-6 or less than it's all good.
+You will see the mean difference (L1 metric distance) on the first and second predicted class. If it's 10e-6 or less then it's all good.
 
 ## Demo
 ![demo.png](./demo/demo.png)
