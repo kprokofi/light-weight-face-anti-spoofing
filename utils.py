@@ -215,7 +215,8 @@ def make_loader(train, val, test, config, sampler=None):
 
 def build_model(config, device, strict=True, mode='train'):
     ''' build model and change layers depends on loss type'''
-    parameters = dict(prob_dropout=config.dropout.prob_dropout,
+    parameters = dict(width_mult=config.model.width_mult,
+                    prob_dropout=config.dropout.prob_dropout,
                     type_dropout=config.dropout.type,
                     mu=config.dropout.mu,
                     sigma=config.dropout.sigma,
