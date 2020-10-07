@@ -28,7 +28,7 @@ import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-from eval_protocol import evaulate
+from eval_protocol import evaluate
 from utils import (AverageMeter, cutmix, load_checkpoint,
                    mixup_target, precision, save_checkpoint)
 
@@ -170,7 +170,7 @@ class Trainer:
         # evaluate on last 10 epoch and remember best accuracy, AUC, EER, ACER and then save checkpoint
         if (epoch%10 == 0 or epoch >= (self.config.max_epoch - 10)) and (epoch_accuracy > self.current_accuracy):
             print('__VAL__:')
-            AUC, EER, apcer, bpcer, acer = evaulate(self.model, self.val_loader,
+            AUC, EER, apcer, bpcer, acer = evaluate(self.model, self.val_loader,
                                                     self.config, self.device, compute_accuracy=False)
             print(self.print_result(AUC, EER, epoch_accuracy, apcer, bpcer, acer))
             if acer < self.best_acer:
@@ -182,7 +182,7 @@ class Trainer:
                 self.current_accuracy = epoch_accuracy
                 self.current_eer = EER
                 self.current_auc = AUC
-                AUC, EER, accur, apcer, bpcer, acer, _, _ = evaulate(self.model, self.test_loader, self.config,
+                AUC, EER, accur, apcer, bpcer, acer, _, _ = evaluate(self.model, self.test_loader, self.config,
                                                                      self.device, compute_accuracy=True)
                 print('__TEST__:')
                 print(self.print_result(AUC, EER, accur, apcer, bpcer, acer))
@@ -304,7 +304,7 @@ class Trainer:
 
         for loader in (self.val_loader, self.test_loader):
             # printing results
-            AUC, EER, accur, apcer, bpcer, acer, _, _ = evaulate(self.model, loader, self.config,
+            AUC, EER, accur, apcer, bpcer, acer, _, _ = evaluate(self.model, loader, self.config,
                                                                 self.device, compute_accuracy=True)
             results = self.print_result(AUC, EER, accur, apcer, bpcer, acer)
             with open(os.path.join(self.config.checkpoint.experiment_path, file_name), 'a') as f:

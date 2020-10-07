@@ -4,7 +4,7 @@ dataset = 'celeba_spoof'
 
 multi_task_learning = True
 
-evaulation = True
+evaluation = True
 
 test_steps = None
 

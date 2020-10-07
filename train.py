@@ -144,8 +144,8 @@ def train(config, device='cuda:0', save_chkpt=True):
         if config.test_steps:
             exit()
 
-    # evaulate in the end of training
-    if config.evaulation:
+    # evaluate in the end of training
+    if config.evaluation:
         file_name = 'tests.txt'
         trainer.test(file_name=file_name)
 

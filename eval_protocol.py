@@ -79,7 +79,7 @@ def main():
     test_loader = DataLoader(dataset=test_dataset, batch_size=100, shuffle=True, num_workers=2)
 
     # computing metrics
-    auc_, eer, accur, apcer, bpcer, acer, fpr, tpr  = evaulate(model, test_loader,
+    auc_, eer, accur, apcer, bpcer, acer, fpr, tpr  = evaluate(model, test_loader,
                                                                config, device,
                                                                compute_accuracy=True)
     print((f'eer = {round(eer*100,2)}\n'
@@ -96,8 +96,8 @@ def main():
         plot_roc_curve(fpr, tpr, config)
         det_curve(fpr, fnr, eer, config)
 
-def evaulate(model, loader, config, device, compute_accuracy=True):
-    ''' evaulating AUC, EER, BPCER, APCER, ACER on given data loader and model '''
+def evaluate(model, loader, config, device, compute_accuracy=True):
+    ''' evaluating AUC, EER, BPCER, APCER, ACER on given data loader and model '''
     model.eval()
     proba_accum = np.array([])
     target_accum = np.array([])
