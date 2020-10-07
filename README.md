@@ -27,12 +27,12 @@ bash init_venv.sh
 . venv/bin/activate
 ```
 ### Data Preparation
-For training or evaluating on CelebA Spoof dataset you need to download dataset (you can do it from their [official repository](https://github.com/Davidzhangyuanhan/CelebA-Spoof)) and then run following script being located in root folder of the project:
+For training or evaluating on CelebA Spoof dataset you need to download dataset (you can do it from the [official repository](https://github.com/Davidzhangyuanhan/CelebA-Spoof)) and then run the following script being located in the root folder of the project:
 ```bash
 cd /data_preparation/
 python prepare_celeba_json.py
 ```
-To train or evaluate on LCC FASD dataset you need to download it (link is available in their paper on [arxiv](https://csit.am/2019/proceedings/PRIP/PRIP3.pdf)). Then you need to get the OpenVINO™ face detector model (choose the one on the goole drive), activate OpenVINO™ enviroment and run following script:
+To train or evaluate on LCC FASD dataset you need to download it (link is available in the [original paper](https://csit.am/2019/proceedings/PRIP/PRIP3.pdf)). Then you need to get the OpenVINO™ face detector model (you can use [model downloader](https://docs.openvinotoolkit.org/latest/omz_tools_downloader_README.html) to do that), activate OpenVINO™ enviroment and run following script:
 ```bash
 python prepare_LCC_FASD.py --fd_model <path to `.xml` face detector model> --root_dir <path to root dir of LCC_FASD>
 ```
@@ -44,15 +44,15 @@ Note that the new folder will be created and named as `<old name>cropped`. So to
 To train or evaluate on CASIA CEFA you just need to download it. Reader for this dataset supports not only RGB modality, but depth and IR too. Nevertheless, it's not the purpose of this project.
 
 If you want to use your own data, the next steps should be done:
-1) prepare reader for your dataset.
+1) Prepare reader for your dataset.
 2) Import reader object to datasets/database.py file. Substitute `do_nothing` with your object in `external_reader=do_nothing` (35 line).
-3) in config, write any kwargs for train, val, test protocol. If you do not have test data, you can just add the same parameters as in val.
+3) In config, write any kwargs for train, val, test protocol. If you do not have test data, you can just add the same parameters as in val.
 Example: `external = dict(train=dict(data_root='...', mode='train', whatever=...), val=dict(data_root='...', mode='val', whatever=...), test=dict(...))`
 
 Now you are ready to launch training process!
 
 ### Configuration file
-The script for training and inference uses a configuration file. This is default [configuration file](./configs/config.py). You need to specify paths to datasets. Training pipeline supports following methods, which you can switch on and tune hyperparams while training:
+The script for training and inference uses a configuration file. This is [default one](./configs/config.py). You need to specify paths to datasets. Training pipeline supports following methods, which you can switch on and tune hyperparams while training:
 * **dataset** - this is indicator which dataset you will be using during training. Available options are 'celeba-spoof', 'LCC_FASD', 'Casia', 'multi_dataset', 'external'
 * **multi_task_learning** - specify whether or not to train with multitask loss. **It is avaliable for CelebA-Spoof dataset only!**
 * **evaulation** - it is flag to perform the assessment at the end of training and write metrics to a file
@@ -96,14 +96,23 @@ To convert the obtained model, run the following command:
 python convert_model.py --config <path to config>; --model_path <path to where save the model>;
 ```
 By default, the output model path is 'MobileNetv3.onnx'
-Now you obtain '.onnx' format. To obtain OpenVINO™ IR model you should refer to [official documentation](https://docs.openvinotoolkit.org/latest/openvino_docs_MO_DG_Deep_Learning_Model_Optimizer_DevGuide.html) for next steps. You do not need to add --mean, --scale, --inverse_input channels options.
-To check that there are no mistakes with the conversion you can launch `conversion_checker.py` by writing following command:
+
+Now you obtain '.onnx' format. Then go to <OPENVINO_INSTALL_DIR>/deployment_tools/model_optimizer/install_prerequisites directory and run:
+```bash
+install_prerequisites_onnx.sh
+```
+Use the `mo_onnx.py` script from the <INSTALL_DIR>/deployment_tools/model_optimizer directory to run the Model Optimizer:
+```bash
+python mo_onnx.py --input_model <INPUT_MODEL.onnx>
+```
+To check that there are no mistakes with the conversion you can launch `conversion_checker.py` by writing the following command:
 ```bash
 python conversion_checker.py --config <path to config>; --spf_model_torch <path to torch model> --spf_model_openvino <path to openvino model>;
 ```
 You will see mean difference (L1 metric distance) on the first and second predicted class. If it's 10e-6 or less than it's all good.
 
 ## Demo
+![demo.png](./demo/demo.png)
 To start demo you need to download one of available OpenVINO™ face detector model. On [google drive](https://drive.google.com/drive/u/0/folders/1A6wa3AlrdjyNPkXT81knIzXxR7SAYm1q) you will see a trained antispoofing model that you can download and run, or choose your own trained model. Use OpenVINO™ format to obtain best perfomance speed, but pytorch format will work as well.
 
 After preparation start demo by running:
