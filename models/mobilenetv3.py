@@ -243,6 +243,22 @@ class MobileNetV3(nn.Module):
         x = self.conv_last(x)
         return x
 
+    def get_emb(self, x):
+        x = self.features(x)
+        x = self.conv_last(x)
+        emb = self.avgpool(x)
+        return emb
+
+    def compute_last_layers(emb):
+        output = emb.view(emb.size(0), -1)
+        spoof_out = self.spoofer(output)
+        if self.multi_heads:
+            type_spoof = self.spoof_type(output)
+            lightning_type = self.lightning(output)
+            real_atr = torch.sigmoid(self.real_atr(output))
+            return spoof_out, type_spoof, lightning_type, real_atr
+        return spoof_out
+
     def forward_to_onnx(self,x):
         x = self.features(x)
         x = self.conv_last(x)

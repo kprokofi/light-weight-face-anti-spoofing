@@ -30,7 +30,7 @@ from tqdm import tqdm
 
 from eval_protocol import evaluate
 from utils import (AverageMeter, cutmix, load_checkpoint,
-                   mixup_target, precision, save_checkpoint)
+                   mixup_target, precision, save_checkpoint, TAC)
 
 
 class Trainer:
@@ -168,7 +168,7 @@ class Trainer:
 
     def eval(self, epoch: int, epoch_accuracy: float, save_chkpt: bool=True):
         # evaluate on last 10 epoch and remember best accuracy, AUC, EER, ACER and then save checkpoint
-        if (epoch%10 == 0 or epoch >= (self.config.max_epoch - 10)) and (epoch_accuracy > self.current_accuracy):
+        if (epoch%10 == 0 or epoch >= (self.config.epochs.max_epoch - 10)) and (epoch_accuracy > self.current_accuracy):
             print('__VAL__:')
             AUC, EER, apcer, bpcer, acer = evaluate(self.model, self.val_loader,
                                                     self.config, self.device, compute_accuracy=False)
@@ -240,12 +240,18 @@ class Trainer:
             return output
         else:
             assert not self.config.RSC.use_rsc
-            features = self.model(input_)
+            embeding = self.model.get_emb(input_)
             if self.data_parallel:
                 model1 = self.model.module
             else:
                 model1 = self.model
-            output = model1.make_logits(features)
+            output = model1.compute_last_layers(features)
+            # features = self.model(input_)
+            # if self.data_parallel:
+            #     model1 = self.model.module
+            # else:
+            #     model1 = self.model
+            # output = model1.make_logits(features)
             return output
 
     def multi_task_criterion(self, output: tuple, target: torch.tensor,
