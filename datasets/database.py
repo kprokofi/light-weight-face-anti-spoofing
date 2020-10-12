@@ -48,7 +48,7 @@ def get_datasets(config):
                                             test_mode=True,
                                             multi_learning=config.multi_task_learning),
 
-                'celeba_spoof_test': partial(CelebASpoofDataset, CelebASpoofDataset,root_folder=celeba_root,
+                'celeba_spoof_test': partial(CelebASpoofDataset,root_folder=celeba_root,
                                             test_mode=True, multi_learning=config.multi_task_learning),
 
                 'Casia_train': partial(CasiaSurfDataset, protocol=1, dir_=casia_root,
