@@ -26,6 +26,7 @@ import os
 import os.path as osp
 import sys
 from importlib import import_module
+import math
 
 import numpy as np
 import torch
@@ -324,3 +325,28 @@ def make_weights(config):
             weights[int(key)] = 0.2
     assert len(weights) == n
     return n, weights
+
+
+class TAC():
+    def __init__(self, classes, emb_dim=512):
+        self.classes = classes
+        self.embedings = torch.randn(self.classes, emb_dim, 1, 1)*math.sqrt(2./emb_dim)
+        print(self.embedings.shape)
+        self.p = [1/self.classes + 1/(self.classes*(self.classes-1))]*self.classes
+
+    def update(self, emb, target):
+        target_index = target.argmax(dim=1)
+        for i, ind in enumerate(target_index):
+            self.embedings[ind] = (self.embedings[ind].detach().to(target.device) + emb[i])/2
+
+    def get_emb(self, target):
+        target_index = target.argmax(dim=1)
+        emb_matrix = torch.tensor([])
+        for i, ind in enumerate(target_index):
+            self.p[ind] = 0
+            index = np.random.choice(self.classes, 1, p=self.p)
+            self.p[ind] = 1/self.classes + 1/(self.classes*(self.classes-1))
+            contrast_emb = self.embedings[index]
+            emb_matrix = torch.cat((emb_matrix, contrast_emb))
+        print(emb_matrix.shape)
+        return emb_matrix

@@ -37,6 +37,7 @@ class Trainer:
     def __init__(self, model, criterion, optimizer, device,
                  config, train_loader, val_loader, test_loader):
         self.model = model
+        self.tac = TAC(2)
         self.criterion = criterion
         self.optimizer = optimizer
         self.device = device
@@ -239,13 +240,26 @@ class Trainer:
             output = (output, *all_tasks_output[1:])
             return output
         else:
+            '''
+            for imges, target in dataloader:
+                z <-- model.get_emb(imges) # new embeding
+                avg_z <-- TAC.get_emb
+                new_z <-- alpha*z + (1-alpha)*avg_z
+                logits <-- model.make_logits(new_z)
+                loss <-- loss_func(logits, target)
+                loss.backward()
+            '''
             assert not self.config.RSC.use_rsc
             embeding = self.model.get_emb(input_)
+
+            avg_emb = self.tac.get_emb(target).to(self.device)
+            new_emb = 0.1*embeding + (1-0.1)*avg_emb
             if self.data_parallel:
                 model1 = self.model.module
             else:
                 model1 = self.model
-            output = model1.compute_last_layers(features)
+            output = model1.compute_last_layers(new_emb)
+            self.tac.update(embeding, target)
             # features = self.model(input_)
             # if self.data_parallel:
             #     model1 = self.model.module

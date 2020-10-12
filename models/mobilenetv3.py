@@ -249,7 +249,7 @@ class MobileNetV3(nn.Module):
         emb = self.avgpool(x)
         return emb
 
-    def compute_last_layers(emb):
+    def compute_last_layers(self, emb):
         output = emb.view(emb.size(0), -1)
         spoof_out = self.spoofer(output)
         if self.multi_heads:
