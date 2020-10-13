@@ -37,7 +37,7 @@ class Trainer:
     def __init__(self, model, criterion, optimizer, device,
                  config, train_loader, val_loader, test_loader):
         self.model = model
-        self.tac = TAC(2)
+        self.tac = TAC(classes=2, emb_dim=config.model.embeding_dim)
         self.criterion = criterion
         self.optimizer = optimizer
         self.device = device
@@ -253,7 +253,7 @@ class Trainer:
             embeding = self.model.get_emb(input_)
 
             avg_emb = self.tac.get_emb(target).to(self.device)
-            new_emb = 0.1*embeding + (1-0.1)*avg_emb
+            new_emb = 0.1*avg_emb + (1-0.1)*embeding
             if self.data_parallel:
                 model1 = self.model.module
             else:
