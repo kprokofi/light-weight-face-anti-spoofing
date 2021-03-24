@@ -6,7 +6,6 @@ python:
 before_install:
   - pip install -r requirements.txt
 script:
-  - python -m pytest --pylint --pylint-rcfile=./pylint.rc --pylint-error-types=EF --pylint-jobs=4
   - python tests.py --verbose
 notifications:
   email: false
