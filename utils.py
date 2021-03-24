@@ -1,24 +1,15 @@
-'''MIT License
-
-Copyright (C) 2020 Prokofiev Kirill
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"),
-to deal in the Software without restriction, including without limitation
-the rights to use, copy, modify, merge, publish, distribute, sublicense,
-and/or sell copies of the Software, and to permit persons to whom
-the Software is furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included
-in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
-THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
-OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
-ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
-OR OTHER DEALINGS IN THE SOFTWARE.'''
+"""
+ Copyright (c) 2020 Intel Corporation
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+      http://www.apache.org/licenses/LICENSE-2.0
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+"""
 
 import json
 import logging
@@ -94,7 +85,7 @@ def load_checkpoint(checkpoint_path, net, map_location, optimizer=None, load_opt
         unloaded = net.load_state_dict(checkpoint, strict=strict)
         missing_keys, unexpected_keys = (', '.join(i) for i in unloaded)
     if missing_keys or unexpected_keys:
-        logging.warning(f'NEXT KEYS HAVE NOT BEEN LOADED:\n\nmissing keys: {missing_keys}\
+        logging.warning(f'THE FOLLOWING KEYS HAVE NOT BEEN LOADED:\n\nmissing keys: {missing_keys}\
             \n\nunexpected keys: {unexpected_keys}\n')
         print('proceed traning ...')
     if load_optimizer:
@@ -114,26 +105,25 @@ def precision(output, target, s=None):
 def mixup_target(input_, target, config, device):
     # compute mix-up augmentation
     input_, target_a, target_b, lam = mixup_data(input_, target, config.aug.alpha,
-                                                config.aug.beta, device)
+                                                config.aug.beta, device, config.aug.aug_prob)
     return input_, target_a, target_b, lam
 
-def mixup_data(x, y, alpha=1.0, beta=1.0, device='cuda:0'):
+def mixup_data(x, y, alpha=1.0, beta=1.0, device='cuda:0', aug_prob=1.):
     '''Returns mixed inputs, pairs of targets, and lambda'''
-    if alpha > 0:
+    r = np.random.rand(1)
+    if (alpha > 0) and (beta > 0) and (r <= aug_prob):
         lam = np.random.beta(alpha, beta)
-    else:
-        lam = 1
+        batch_size = x.size()[0]
+        index = torch.randperm(batch_size).to(device)
 
-    batch_size = x.size()[0]
-    index = torch.randperm(batch_size).to(device)
-
-    mixed_x = lam * x + (1 - lam) * x[index, :]
-    y_a, y_b = y, y[index]
-    return mixed_x, y_a, y_b, lam
+        mixed_x = lam * x + (1 - lam) * x[index, :]
+        y_a, y_b = y, y[index]
+        return mixed_x, y_a, y_b, lam
+    return x, y, y, 0
 
 def cutmix(input_, target, config, device='cuda:0'):
     r = np.random.rand(1)
-    if (config.aug.beta > 0) and (config.aug.alpha > 0) and (r < config.aug.cutmix_prob):
+    if (config.aug.beta > 0) and (config.aug.alpha > 0) and (r <= config.aug.aug_prob):
         # generate mixed sample
         lam = np.random.beta(config.aug.alpha > 0, config.aug.beta > 0)
         rand_index = torch.randperm(input_.size()[0]).to(device)

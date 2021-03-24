@@ -2,6 +2,8 @@
 Towards the solving anti-spoofing problem on RGB only data.
 ## Introduction
 This repository contains a training and evaluation pipeline with different regularization methods for face anti-spoofing network. There are a few models available for training purposes, based on MobileNetv2 (MN2) and MobileNetv3 (MN3). Project supports natively three datasets: [CelebA Spoof](https://github.com/Davidzhangyuanhan/CelebA-Spoof), [LCC FASD](https://csit.am/2019/proceedings/PRIP/PRIP3.pdf), [CASIA-SURF CeFA](https://arxiv.org/pdf/2003.05136.pdf). Also, you may want to train or validate with your own data. Final model based on MN3 trained on the CelebA Spoof dataset. The model has 3.72 times fewer parameters and 24.3 times fewer GFlops than AENET from the original paper, at the same time MN3 better generalizes on cross-domain. The code contains a demo that you can launch in real-time with your webcam or on the provided video. You can check out the short video on how it works on the [goole drive](https://drive.google.com/drive/u/0/folders/1A6wa3AlrdjyNPkXT81knIzXxR7SAYm1q). Also, the code supports conversion to the ONNX format.
+You can follow the links to the configuration files with smaller models to train them as-is and obtain metrics below.
+
 | model name | dataset | AUC | EER% | APCER% | BPCER% | ACER% | MParam | GFlops | Link to snapshot |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | MN3_large |CelebA-Spoof| 0.998 | 2.26 | 0.69 | 6.92 | 3.8 | 3.02 |  0.15 | [snapshot](https://drive.google.com/drive/u/0/folders/1A6wa3AlrdjyNPkXT81knIzXxR7SAYm1q) |
@@ -70,11 +72,11 @@ The script for training and inference uses a configuration file. This is [defaul
 * **resize** - resize of the image
 * **checkpoint** - the name of the checkpoint to save and the path to the experiment folder where checkpoint, tensorboard logs and eval metrics will be kept
 * **loss** - there are available two possible losses: `amsoftmax` with `cos`, `arcos`, `cross_enropy` margins and `soft_triple` with different number of inner classes. For more details about this soft triple loss see in [paper](https://arxiv.org/pdf/1909.05235.pdf)
-* **loss.amsoftmax.ratio**a  - there is availability to use different m for different classes. The ratio is the weights on which provided `m` will be divided for a specific class. For example ratio = [1,2] means that m for the first class will equal to m, but for the second will equal to m/2
+* **loss.amsoftmax.ratio**  - there is availability to use different m for different classes. The ratio is the weights on which provided `m` will be divided for a specific class. For example ratio = [1,2] means that m for the first class will equal to m, but for the second will equal to m/2
 * **loss.amsoftmax.gamma** - if this constant differs from 0 then the focal loss will be switched on with the corresponding gamma
-* **For soft triple loss**: `Cn` - number of classes, `K` - number of proxies for each class, `tau` - parameter for regularisation number of proxies
-* **model** - there are parameters concern model. `pretrained` means that you want to train with the imagenet weights (you can download weights from [google drive](https://drive.google.com/drive/u/0/folders/1A6wa3AlrdjyNPkXT81knIzXxR7SAYm1q) and specify the path to it in the `imagenet weights` parameter. **model_type** - type of the model, 'Mobilenet3' and 'Mobilenet2' are available. **size** param means the size of the mobilenetv3, there are 'large' and 'small' options. Note that this will change mobilenev3 only. **embeding_dim** - the size of the embeding (vector of features after average pooling). **width_mult** - the width scaling parameter of the model. Note, that you will need the appropriate imagenet weights if you want to train your model with transfer learning. On google drive weights with 0.75, 1.0 value of this parameter is available
-* **aug** - advanced augmentation, appropriate value for type is 'cutmix' or 'mixup. lambda = BetaDistribution(alpha, beta), cutmix_prob - probability of applying cutmix on image.
+* **For soft triple loss**: `Cn` - number of classes, `K` - number of proxies for each class, `tau` - parameter for regularization number of proxies
+* **model** - there are parameters concerning model. `pretrained` means that you want to train with the imagenet weights (you can download weights from [google drive](https://drive.google.com/drive/u/0/folders/1A6wa3AlrdjyNPkXT81knIzXxR7SAYm1q) and specify the path to it in the `imagenet weights` parameter. **model_type** - type of the model, 'Mobilenet3' and 'Mobilenet2' are available. **size** param means the size of the mobilenetv3, there are 'large' and 'small' options. Note that this will change mobilenev3 only. **embeding_dim** - the size of the embeding (vector of features after average pooling). **width_mult** - the width scaling parameter of the model. Note, that you will need the appropriate imagenet weights if you want to train your model with transfer learning. On google drive weights with 0.75, 1.0 values of this parameter are available
+* **aug** - there are some advanced augmentations are available. You can specify `cutmix` or `mixup` and appropriate params for them. `alpha` and `beta` are used for choosing `lambda` from beta distribution, `aug_prob` response for the probability of applying augmentation on the image.
 * **curves** - you can specify the name of the curves, then set option `--draw_graph` to `True` when evaluating with eval_protocol.py script
 * **dropout** - `bernoulli` and `gaussian` dropouts are available with respective parameters
 * **data_parallel** - you can train your network on several GPU
@@ -120,7 +122,7 @@ You will see the mean difference (L1 metric distance) on the first and second pr
 
 ## Demo
 ![demo.png](./demo/demo.png)
-To start demo you need to [download] OpenVINO™ face detector model. Concretely, you will need `face-detection-0100` version. 
+To start demo you need to [download] OpenVINO™ face detector model. Concretely, you will need `face-detection-0100` version.
 On [google drive](https://drive.google.com/drive/u/0/folders/1A6wa3AlrdjyNPkXT81knIzXxR7SAYm1q) you will see a trained antispoofing model that you can download and run, or choose your own trained model. Use OpenVINO™ format to obtain the best performance speed, but PyTorch format will work as well.
 
 After preparation start demo by running:

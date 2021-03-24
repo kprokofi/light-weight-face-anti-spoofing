@@ -1,24 +1,15 @@
-'''MIT License
-
-Copyright (C) 2020 Prokofiev Kirill
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"),
-to deal in the Software without restriction, including without limitation
-the rights to use, copy, modify, merge, publish, distribute, sublicense,
-and/or sell copies of the Software, and to permit persons to whom
-the Software is furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included
-in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
-THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
-OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
-ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
-OR OTHER DEALINGS IN THE SOFTWARE.'''
+"""
+ Copyright (c) 2020 Intel Corporation
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+      http://www.apache.org/licenses/LICENSE-2.0
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+"""
 
 import os
 
@@ -143,7 +134,7 @@ class Trainer:
                 else:
                     model1 = self.model
 
-                output = model1.make_logits(features)
+                output = model1.make_logits(features, all=True)
                 if isinstance(output, tuple):
                     output = output[0]
 
@@ -168,7 +159,7 @@ class Trainer:
 
     def eval(self, epoch: int, epoch_accuracy: float, save_chkpt: bool=True):
         # evaluate on last 10 epoch and remember best accuracy, AUC, EER, ACER and then save checkpoint
-        if (epoch%10 == 0 or epoch >= (self.config.max_epoch - 10)) and (epoch_accuracy > self.current_accuracy):
+        if (epoch%10 == 0 or epoch >= (self.config.epochs.max_epoch - 10)) and (epoch_accuracy > self.current_accuracy):
             print('__VAL__:')
             AUC, EER, apcer, bpcer, acer = evaluate(self.model, self.val_loader,
                                                     self.config, self.device, compute_accuracy=False)
@@ -193,14 +184,14 @@ class Trainer:
         If use rsc compute output applying rsc method'''
         assert target.shape[1] == 2
         if self.config.RSC.use_rsc:
-            # making features before avg pooling
+            # making features after avg pooling
             features = self.model(input_)
             if self.data_parallel:
                 model1 = self.model.module
             else:
                 model1 = self.model
-            # do everything after convolutions layers, strating with avg pooling
-            all_tasks_output = model1.make_logits(features)
+            # do everything after convolutions layers, strating after the avg pooling
+            all_tasks_output = model1.make_logits(features, all=True)
             logits = (all_tasks_output[0]
                       if self.config.multi_task_learning
                       else all_tasks_output)
@@ -221,11 +212,10 @@ class Trainer:
             quantile = quantile.reshape(input_.size(0),1,1,1)
             # create mask
             mask = gradients < quantile
-
             # element wise product of features and mask, correction for expectition value
             new_features = (features*mask)/(1-self.config.RSC.p)
             # compute new logits
-            new_logits = model1.spoof_task(new_features)
+            new_logits = model1.make_logits(new_features, all=False)
             if isinstance(new_logits, tuple):
                 new_logits = new_logits[0]
             # compute this operation batch wise
@@ -245,7 +235,7 @@ class Trainer:
                 model1 = self.model.module
             else:
                 model1 = self.model
-            output = model1.make_logits(features)
+            output = model1.make_logits(features, all=True)
             return output
 
     def multi_task_criterion(self, output: tuple, target: torch.tensor,
@@ -312,7 +302,7 @@ class Trainer:
 
     @staticmethod
     def print_result(AUC, EER, accur, apcer, bpcer, acer):
-        results = (f'accuracy on test data = {round(np.mean(accur),3)}\n'
+        results = (f'accuracy on test data = {round(np.mean(accur)*100,3)}\n'
                    + f'AUC = {round(AUC,3)}\n'
                    + f'EER = {round(EER*100,2)}\n'
                    + f'apcer = {round(apcer*100,2)}\n'
