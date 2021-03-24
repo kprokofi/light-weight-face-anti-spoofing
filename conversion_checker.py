@@ -63,7 +63,7 @@ def pred_spoof(batch, spoof_model_torch, spoof_model_openvino):
     return output1, output2
 
 def check_accuracy(torch_pred, openvino_pred):
-    diff = np.abs(openvino_pred - torch_pred)
+    diff = np.abs(np.array(openvino_pred) - np.array(torch_pred))
     avg = diff.mean(axis=0)
     return avg
 
