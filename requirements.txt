@@ -3,7 +3,7 @@ torchvision==0.7.0
 albumentations==0.4.6
 attrdict==2.0.1
 opencv-python==4.4.0.44
-numpy==1.19.2
+numpy==1.22.0
 pandas==1.1.2
 sklearn==0.0
 tqdm==4.50.0
