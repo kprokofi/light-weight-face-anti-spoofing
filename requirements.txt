@@ -9,7 +9,7 @@ sklearn==0.0
 tqdm==4.50.0
 matplotlib==3.3.2
 tensorboard==2.3.0
-onnx==1.7.0
+onnx==1.13.0
 glog==0.3.1
 pytest==6.1.0
 pylint==2.6.0
